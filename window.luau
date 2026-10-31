@@ -96,8 +96,10 @@ end
 -- the data of the host the focused pane belongs to.
 
 local SYNC_BLOCK = tern.plugin.id .. ".sync"
+local SYNC_ERROR_PREFIX = "usage-plus sync error: "
 local host_data: { [string]: any } = {} -- host key ("local" or name) → {usage, today, models, at}
 local pane_host_map: { [number]: string } = {}
+local local_host_name: string = ""
 local last_sync_read = 0
 local last_ensure = 0
 
@@ -108,10 +110,15 @@ local function refresh_host_map(cx: any)
 	pane_host_map = {}
 	if ok and type(hosts) == "table" then
 		for _, host in hosts do
-			if type(host) == "table" and type(host.panes) == "table" then
-				local key = if host.kind == "local" then "local" else tostring(host.name or host.id)
-				for _, pid in host.panes do
-					pane_host_map[pid] = key
+			if type(host) == "table" then
+				if host.kind == "local" then
+					local_host_name = tostring(host.name or "")
+				end
+				if type(host.panes) == "table" then
+					local key = if host.kind == "local" then "local" else tostring(host.name or host.id)
+					for _, pid in host.panes do
+						pane_host_map[pid] = key
+					end
 				end
 			end
 		end
@@ -145,9 +152,16 @@ local function refresh_sync_data(cx: any)
 				return cx.session:read(info.pane, { max_chars = 8000 })
 			end)
 			if ok_read and type(answer) == "table" and answer.kind == "plugin" and type(answer.text) == "string" then
-				local doc = decode_payload(answer.text :: string)
-				if doc ~= nil then
-					host_data[pane_host_map[info.pane] or "local"] = doc
+				local text = answer.text :: string
+				local key = pane_host_map[info.pane] or "local"
+				if string.sub(text, 1, #SYNC_ERROR_PREFIX) == SYNC_ERROR_PREFIX then
+					-- the sync block is alive but its payload failed: surface the reason
+					host_data[key] = { sync_error = string.sub(text, #SYNC_ERROR_PREFIX + 1), at = os.time() * 1000 }
+				else
+					local doc = decode_payload(text)
+					if doc ~= nil then
+						host_data[key] = doc
+					end
 				end
 			end
 		end
@@ -217,20 +231,31 @@ local function ensure_sync_block(cx: any)
 	end
 end
 
--- The focused pane's host key ("local" or the host's name) and that host's data,
--- falling back to the local kv when the host has no sync block (yet).
-local function data_for(settings: any, pane: number?): (string, any)
+-- The focused pane's host key ("local" or the host's name), that host's data and the
+-- label the card shows. A remote host without (fresh) sync data falls back to the local
+-- accounts for the LIMITS, but its today row reads "data unavailable" instead of
+-- claiming the local machine's numbers.
+local function data_for(pane: number?): (string, any, string)
 	local key = (pane and pane_host_map[pane]) or "local"
-	local data = host_data[key]
-	if key ~= "local" and type(data) == "table" and type(data.usage) == "table" then
-		return key, data
+	if key ~= "local" then
+		local data = host_data[key]
+		if type(data) == "table" and type(data.usage) == "table" then
+			return key, data, key
+		end
+		local today = nil
+		local d = host_data[key]
+		if type(d) == "table" then
+			today = d.today
+		end
+		return key, { usage = fetch.kv_get("usage"), models = fetch.kv_get("models"), today = today, at = os.time() * 1000 }, key
 	end
+	local label = if local_host_name ~= "" then local_host_name else "本机"
 	return "local", {
 		usage = fetch.kv_get("usage"),
 		models = fetch.kv_get("models"),
 		today = fetch.kv_get("today"),
 		at = os.time() * 1000,
-	}
+	}, label
 end
 
 -- ── rendering ───────────────────────────────────────────────────────────────
@@ -287,15 +312,12 @@ local function providers_present(): { string }
 	return present
 end
 
-local function today_text(settings: any, host_key: string?, today: any): string?
-	if type(today) ~= "table" or type(today.tokens) ~= "number" or type(today.cost) ~= "number" then
-		return nil
-	end
+local function today_text(settings: any, label: string, today: any): string?
 	local L = labels.get(settings.language)
-	if host_key ~= nil and host_key ~= "local" then
-		return string.format(L.today_line_host, host_key :: string, line.compact_number(today.tokens :: number), today.cost :: number)
+	if type(today) ~= "table" or type(today.tokens) ~= "number" or type(today.cost) ~= "number" then
+		return string.format(L.today_unavailable, label)
 	end
-	return string.format(L.today_line, line.compact_number(today.tokens :: number), today.cost :: number)
+	return string.format(L.today_line, label, line.compact_number(today.tokens :: number), today.cost :: number)
 end
 
 local function tick(cx: any?)
@@ -325,7 +347,7 @@ local function tick(cx: any?)
 	end
 
 	local chip, _viewing = read_dock(cx, pane :: number)
-	local host_key, data = data_for(settings, pane :: number)
+	local host_key, data, host_label = data_for(pane :: number)
 	local usage = data.usage
 	local models = data.models
 	local model = line.build(settings, {
@@ -340,12 +362,12 @@ local function tick(cx: any?)
 		return
 	end
 	-- redraw the status bar when the shown host's data changed
-	local host_sig = host_key .. "/" .. tostring(if type(data.today) == "table" then data.today.at else nil)
+	local host_sig = host_key .. "/" .. tostring(if type(data.today) == "table" then data.today.at else nil) .. "/" .. tostring(data.sync_error or "")
 	if host_sig ~= cached.host_sig then
 		cached.host_sig = host_sig
 		tern.chrome.refresh()
 	end
-	install(line.sheet(settings, model, L, today_text(settings, host_key, data.today), data.today, now))
+	install(line.sheet(settings, model, L, today_text(settings, host_label, data.today), data.today, now))
 end
 
 local function poll_loop(cx: any?)
