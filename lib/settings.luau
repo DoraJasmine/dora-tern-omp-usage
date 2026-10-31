@@ -30,6 +30,8 @@ M.PRESETS = {
 	["opencode-go"] = { name = "Go cyan", a = "light-dark(#0a8aa1, #2ccde6)" },
 	["alibaba-token-plan"] = { name = "Qwen purple", a = "light-dark(#6c4fd0, #a088ff)" },
 	devin = { name = "Devin teal", a = "light-dark(#0e8c80, #34c8b6)" },
+	["zai-coding-plan"] = { name = "Z.ai graphite", a = "light-dark(#3f3f46, #d4d4d8)", b = "light-dark(#18181b, #a1a1aa)" },
+	zcode = { name = "ZCode graphite", a = "light-dark(#3f3f46, #d4d4d8)", b = "light-dark(#18181b, #a1a1aa)" },
 }
 
 M.ACCENT = { name = "Theme accent", a = "var(--accent)" }

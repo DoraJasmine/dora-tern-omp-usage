@@ -23,6 +23,9 @@ local PROVIDER_LABELS = {
 	["alibaba-token-plan"] = "Qwen",
 	synthetic = "Synthetic",
 	devin = "Devin",
+	["zai-coding-plan"] = "Z.ai",
+	zai = "Z.ai",
+	zcode = "ZCode",
 }
 
 -- Words in provider ids that name the product or plan, not the provider.
@@ -36,6 +39,7 @@ local PREFIX_HINTS = {
 	gemini = "google-gemini-cli",
 	minimax = "minimax-code", abab = "minimax-code",
 	qwen = "alibaba-token-plan", glm = "alibaba-token-plan",
+	zai = "zai-coding-plan", zcode = "zcode",
 }
 
 function M.provider_label(provider: any): string
