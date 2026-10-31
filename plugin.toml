@@ -1,0 +1,16 @@
+schema = 1
+id = "dora-tern-omp-usage"
+name = "omp Usage Plus"
+version = "0.1.0"
+description = "Usage line above the omp composer for every provider omp reports (Kimi, Codex, Claude, ...), today's tokens and cost, a dashboard and settings. One-line install: no omp configuration."
+icon = "gauge"
+host = "host.luau"
+window = "window.luau"
+
+[[blocks]]
+id = "dashboard"
+title = "omp Usage Plus"
+
+[[blocks]]
+id = "sync"
+title = "omp Usage Plus"
