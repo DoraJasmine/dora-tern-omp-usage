@@ -169,6 +169,23 @@ local function ensure_sync_block(cx: any)
 		return
 	end
 	local name = tostring(current.name or current.id)
+	-- Only offer the block kind once the current host's catalog is ready: calling
+	-- cx:new_block earlier prints "no block type ... on this host" into the pane.
+	local ok_types, types = pcall(function()
+		return cx.session:block_types()
+	end)
+	local catalog_ready = false
+	if ok_types and type(types) == "table" then
+		for _, bt in types do
+			if type(bt) == "table" and bt.kind == SYNC_BLOCK then
+				catalog_ready = true
+				break
+			end
+		end
+	end
+	if not catalog_ready then
+		return -- retry on a later tick
+	end
 	local ok2, panes = pcall(function()
 		return cx.session:panes()
 	end)

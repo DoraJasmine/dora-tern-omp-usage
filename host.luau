@@ -33,11 +33,15 @@ tern.block.define("sync", {
 	init = function(cx: any, _args: { string }, _saved: any): any
 		local state = { cx = cx }
 		local function loop()
-			local alive = false
-			for _, p in tern.pane.list() do
-				if p.pane == cx.pane then
-					alive = true
-					break
+			local alive = true
+			local ok_list, panes = pcall(tern.pane.list)
+			if ok_list and type(panes) == "table" then
+				alive = false
+				for _, p in panes do
+					if p.pane == cx.pane then
+						alive = true
+						break
+					end
 				end
 			end
 			if not alive then
@@ -57,20 +61,27 @@ tern.block.define("sync", {
 	end,
 
 	view = function(_state: any, _cx: any): any
-		local usage = fetch.kv_get("usage")
-		local today = fetch.kv_get("today")
-		local models = fetch.kv_get("models")
-		local now = os.time() * 1000
-		local compact_models = nil
-		if type(models) == "table" then
-			compact_models = { at = models.at, by_name = models.by_name, by_provider = models.by_provider }
+		-- Never let a payload problem kill the block: render the error as the text instead.
+		local ok, payload = pcall(function()
+			local usage = fetch.kv_get("usage")
+			local today = fetch.kv_get("today")
+			local models = fetch.kv_get("models")
+			local now = os.time() * 1000
+			local compact_models = nil
+			if type(models) == "table" then
+				compact_models = { at = models.at, by_name = models.by_name, by_provider = models.by_provider }
+			end
+			local body = tern.json.encode({ usage = usage, today = today, models = compact_models, at = now })
+			-- The block read caps its text (8 KB default): drop the models catalog first.
+			if #body > 7000 then
+				body = tern.json.encode({ usage = usage, today = today, models = nil, at = now })
+			end
+			return body
+		end)
+		if not ok then
+			payload = "usage-plus sync error: " .. tostring(payload)
 		end
-		local payload = tern.json.encode({ usage = usage, today = today, models = compact_models, at = now })
-		-- The block read caps its text (8 KB default): drop the models catalog first.
-		if #payload > 7000 then
-			payload = tern.json.encode({ usage = usage, today = today, models = nil, at = now })
-		end
-		return { main = ui.text(ui.span(payload)) }
+		return { main = ui.text(ui.span(payload :: string)) }
 	end,
 })
 
