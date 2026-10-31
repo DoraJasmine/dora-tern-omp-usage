@@ -31,7 +31,31 @@ end
 -- display THIS host's accounts and stats. Re-renders every 5 s while open.
 tern.block.define("sync", {
 	init = function(cx: any, _args: { string }, _saved: any): any
-		local state = { cx = cx }
+		-- state.payload is the block's text; it changes only when the underlying kv data
+		-- changes, so an unchanged check keeps the block silent between real updates
+		-- (no heartbeat frames to every attached window).
+		local state = { cx = cx, payload = nil as string? }
+		local function build(): string?
+			local ok, body = pcall(function()
+				local usage = fetch.kv_get("usage")
+				local today = fetch.kv_get("today")
+				local models = fetch.kv_get("models")
+				local compact_models = nil
+				if type(models) == "table" then
+					compact_models = { at = models.at, by_name = models.by_name, by_provider = models.by_provider }
+				end
+				local out = tern.json.encode({ usage = usage, today = today, models = compact_models })
+				-- The block read caps its text (8 KB default): drop the models catalog first.
+				if #out > 7000 then
+					out = tern.json.encode({ usage = usage, today = today, models = nil })
+				end
+				return out
+			end)
+			if not ok then
+				return "usage-plus sync error: " .. tostring(body)
+			end
+			return body :: string
+		end
 		local function loop()
 			local alive = true
 			local ok_list, panes = pcall(tern.pane.list)
@@ -47,9 +71,13 @@ tern.block.define("sync", {
 			if not alive then
 				return -- the block closed; stop refreshing
 			end
-			pcall(function()
-				state.cx:render()
-			end)
+			local ok, payload = pcall(build)
+			if ok and payload ~= state.payload then
+				state.payload = payload
+				pcall(function()
+					state.cx:render()
+				end)
+			end
 			tern.timer(5000, loop)
 		end
 		tern.timer(500, loop)
@@ -60,28 +88,10 @@ tern.block.define("sync", {
 		return "Dora omp Usage"
 	end,
 
-	view = function(_state: any, _cx: any): any
-		-- Never let a payload problem kill the block: render the error as the text instead.
-		local ok, payload = pcall(function()
-			local usage = fetch.kv_get("usage")
-			local today = fetch.kv_get("today")
-			local models = fetch.kv_get("models")
-			local now = os.time() * 1000
-			local compact_models = nil
-			if type(models) == "table" then
-				compact_models = { at = models.at, by_name = models.by_name, by_provider = models.by_provider }
-			end
-			local body = tern.json.encode({ usage = usage, today = today, models = compact_models, at = now })
-			-- The block read caps its text (8 KB default): drop the models catalog first.
-			if #body > 7000 then
-				body = tern.json.encode({ usage = usage, today = today, models = nil, at = now })
-			end
-			return body
-		end)
-		if not ok then
-			payload = "usage-plus sync error: " .. tostring(payload)
-		end
-		return { main = ui.text(ui.span(payload :: string)) }
+	view = function(state: any, _cx: any): any
+		-- state.payload is kept current by the loop; an unchanged payload renders no frame,
+		-- so the block stays silent between real data updates.
+		return { main = ui.text(ui.span(state.payload or "")) }
 	end,
 })
 

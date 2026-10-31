@@ -136,7 +136,7 @@ end
 
 local function refresh_sync_data(cx: any)
 	local now = os.time()
-	if now - last_sync_read < 3 then
+	if now - last_sync_read < 5 then
 		return
 	end
 	last_sync_read = now
@@ -741,15 +741,20 @@ tern.command({
 			table.insert(sync_hosts, key)
 		end
 		table.sort(sync_hosts)
+		local mem_ok, mem_kb = pcall(collectgarbage, "count")
+		local kv_ok, kv_text = pcall(tern.fs.read, tern.plugin.data .. "/kv.json", 1 << 20)
 		local detail = string.format(
-			"host %s · sync blocks [%s] · usage %s · models %s · today %s · chip %s · provider %s",
+			"host %s · sync blocks [%s] · usage %s · models %s · today %s · chip %s · provider %s
+ lua heap %s · kv.json %s",
 			host_key,
 			table.concat(sync_hosts, ", "),
 			age(if type(usage) == "table" then usage.at else nil),
 			age(if type(models) == "table" then models.at else nil),
 			age(if type(today) == "table" then today.at else nil),
 			chip or "-",
-			provider or "?"
+			provider or "?",
+			if mem_ok and type(mem_kb) == "number" then string.format("%.0f KB", mem_kb) else "n/a",
+			if kv_ok and type(kv_text) == "string" then string.format("%.1f KB", #kv_text / 1024) else "n/a"
 		)
 		local stale = type(usage) == "table" and type(usage.at) == "number" and now - usage.at > STALE_MS
 		cx:toast(if stale then "error" else "info", L.menu_title, detail .. (if stale then " · " .. L.toast_stale else ""))
