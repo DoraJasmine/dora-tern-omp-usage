@@ -1,76 +1,50 @@
 # dora-tern-omp-usage
 
-**Dora omp Usage** —— 在 [Tern](https://stencil.so/tern) 中,把你的 omp 用量额度显示在 omp 输入栏上下文指示条的
-正上方,**支持 omp 报告的所有提供商**(Kimi、Codex、Claude、Gemini、MiniMax……),并附带今日 token 用量与
-API 等效费用(含按提供商分解)、7 天仪表盘和图形化设置。
+**Dora omp Usage** 是一款 [Tern](https://stencil.so/tern) 插件,把 omp 各家服务的订阅额度展示在输入栏上方的上下文用量条处,支持 omp 所有的提供商——Kimi、Codex、Claude、Gemini、MiniMax 等,并附带当日 token 用量与费用统计、近 7 天仪表盘和完善的设置界面。
 
-**一行安装,零 omp 配置。**
+一行命令即可安装,无需对 omp 做任何配置:
 
 ```sh
 tern plugin install github.com/DoraJasmine/dora-tern-omp-usage
 ```
 
-或在 Tern 的 **设置 › 插件 › Install…** 中粘贴同一地址。
+也可以在 Tern 的 **设置 › 插件 › Install…** 中粘贴上述地址。
 
-![悬停在用量线上方的卡片:窗口计量器、重置倒计时,以及窗格所在主机的今日统计](docs/images/hover-card.png)
+![悬浮在用量线上方的卡片:各窗口计量器、重置倒计时,以及窗格所在主机的当日统计](docs/images/hover-card.png)
 
-English readme: [README.en.md](README.en.md)
+English: [README.en.md](README.en.md)
+
+## 功能
+
+- **额度展示**——聚焦 omp 窗格后,各家服务的 5 小时 / 7 天等窗口用量一目了然:填充条、剩余比例、重置倒计时,逐家配色;余量不足时自动转为琥珀色和红色。
+- **悬浮卡片**——鼠标停在用量线上,即可查看各窗口的计量器、重置时间与已存重置的到期时间;卡片支持悬停停留,不会一闪而过。
+- **模型跟随**——切换模型(Alt+P)后约两秒内,额度自动切换到对应的服务;查看子代理时亦然。
+- **多主机**——远程主机(如 WSL、服务器)上的窗格展示该主机自己的数据,与本机互不干扰,全程自动完成。
+- **当日统计**——状态栏常驻当日 token 用量与费用,点击可打开近 7 天仪表盘。
+- **设置**——通过 `Ctrl+Alt+U` 或命令面板打开:显示模式、服务排序、逐家配色、阈值、刷新间隔、界面语言(English / 简体中文)等。
 
 ## 环境要求
 
-- Tern 0.8+(实测 0.9.8,Windows 与 WSL)
-- [omp](https://omp.sh) 18.9+(实测 18.14.1),已登录至少一个有用量限额的提供商
-- 不需要 omp 扩展、不改 `config.yml`、不用重启 —— 装完即用
+- Tern 0.8 及以上(在 0.9.8 上验证,Windows 与 WSL)
+- omp 18.9 及以上(在 18.14.1 上验证),并已登录至少一家有用量限额的服务
+- 无需注册 omp 扩展,不改动任何 omp 配置文件
 
-## 功能一览
+## 数据说明
 
-- **用量线**:聚焦的 omp 窗格上下文栏正上方,按窗口(5h/7d/…)显示填充条、剩余比例、重置倒计时与已存重置,
-  逐提供商配色(剩余 ≤25% 琥珀色,≤10% 红色)。
-- **悬停卡片**:逐窗口计量器、重置时间与时钟时间、已存重置的到期时间、今日总量与按提供商分解、设置入口。
-  鼠标移到卡片上不会消失(0.5s 宽限期)。
-- **模型跟随**:Alt+P 切换模型后约 2 秒内跟随当前提供商;查看子代理转录时跟随子代理的模型。
-- **按主机显示数据**:远程主机(WSL、服务器)上的窗格显示**那台主机**登录账号的额度与统计;本机窗格显示本机数据。
-  全自动 —— 插件会在远程主机上开一个小的数据块并立即驻留(park),不占标签页。
-- **状态栏**:🔥 今日 token 数、💸 今日 API 等效费用(跟随焦点窗格所在主机)。
-- **仪表盘**:近 7 天用量历史 + 今日/近 7 天/本月费用(`r` 刷新)。
-- **设置**(`Ctrl+Alt+U`、状态栏 `用量` 段、或命令面板):显示模式(当前模型/全部/勾选)、提供商排序、
-  逐提供商配色、阈值、刷新间隔、状态栏开关、界面语言(English / 简体中文)。
+- 额度数据来自 `omp usage --json`,omp 登录了哪些服务就展示哪些,新服务无需更新插件;
+- 当日统计自当地零点起,覆盖所有服务,金额按 omp 模型目录中的 API 牌价折算——反映的是"若按 API 直连计费"的等效费用,并非订阅账单。
 
-## 数字是怎么算的
+## 相关文档
 
-- **额度**来自 `omp usage --json` —— 账号级数据,omp 登录了什么就显示什么,新提供商零代码接入。
-- **今日**把 `omp stats --json` 的小时桶从当地零点起求和;按提供商分解聚合自 `byModel`
-  (input + output + cache,与总量同口径)。
-- **价格**来自 omp 的模型目录(`omp models --json`):各模型 input/output/cacheRead/cacheWrite 的
-  API 列表价(USD / 每百万 tokens)。因此金额是 **API 等效费用**(这些用量若按 API 直连要花多少),
-  不是订阅账单。
-
-## 多主机
-
-Tern 的窗口可以显示所有已连接主机的窗格,而插件的 window 半运行在窗口所在机器。本插件用文档支持的方式打通:
-每台主机的 host 半渲染一个极小的 `sync` 数据块(内容为本机数据的 JSON 文本),窗口读取所有能看到的 sync 块
-(`cx.session:read`),并用 `cx.hosts:list()` 把窗格映射到主机。当你在远程主机上工作时数据块自动开启,
-并立即驻流出标签栏。
-
-## 开发
-
-```sh
-git clone https://github.com/DoraJasmine/dora-tern-omp-usage
-tern plugin link ./dora-tern-omp-usage   # 链接你的检出
-tern plugin reload dora-tern-omp-usage   # 改代码后
-tern plugin types ./dora-tern-omp-usage  # 重新生成 tern.d.luau 供 luau-lsp 使用
-```
-
-`docs/` 里是中文的需求文档、架构文档、[实现文档](docs/IMPLEMENTATION.md)与
-[API 使用文档](docs/API.md)(每个 Tern API 是什么、怎么用、用在哪)。
+- [实现指南](docs/IMPLEMENTATION.md) —— 文件结构、数据流水线与常见修改
+- [Tern API 使用说明](docs/API.md) —— 插件用到的每一个 Tern API
+- [需求文档](docs/REQUIREMENTS.md) · [架构文档](docs/ARCHITECTURE.md)
 
 ## 致谢
 
-- [jmazzola/tern-plugin-omp-usage](https://github.com/jmazzola/tern-plugin-omp-usage)(MIT)——
-  本插件线条与卡片的渲染技术(输入栏计量器的 `::before` content + 单层 `background-clip: text` 渐变)改写自此项目。
-- [joaodutra88/tern-omp-usage](https://github.com/joaodutra88/tern-omp-usage)(MIT)——
-  纯 Tern 插件的取数架构、状态栏分段、仪表盘块与逐日统计累计,本项目将其扩展到所有提供商与所有主机。
+- [jmazzola/tern-plugin-omp-usage](https://github.com/jmazzola/tern-plugin-omp-usage) —— 线条与卡片的渲染方案参考自此项目
+- [joaodutra88/tern-omp-usage](https://github.com/joaodutra88/tern-omp-usage) —— 取数架构、状态栏与仪表盘的实现思路参考自此项目
 
 ## 许可
 
-[MIT](LICENSE) © 2026 DoraJasmine —— 第三方来源与声明:[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+[MIT](LICENSE) © 2026 DoraJasmine,第三方组件声明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
