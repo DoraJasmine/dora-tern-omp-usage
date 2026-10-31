@@ -1,7 +1,7 @@
 # Dora omp Usage — 架构文档
 
-版本:v0.9(草案) · 日期:2026-10-31
-配套文档:[REQUIREMENTS.md](./REQUIREMENTS.md)
+版本:v1.0.0 · 日期:2026-10-31
+配套文档:[REQUIREMENTS.md](./REQUIREMENTS.md) · [IMPLEMENTATION.md](./IMPLEMENTATION.md) · [API.md](./API.md)
 
 参考项目(致谢其探索):
 - [jmazzola/tern-plugin-omp-usage](https://github.com/jmazzola/tern-plugin-omp-usage) — 用量线 UI 与设置面板的参考(MIT)

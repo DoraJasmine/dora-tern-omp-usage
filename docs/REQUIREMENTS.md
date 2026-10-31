@@ -1,10 +1,12 @@
 # Dora omp Usage — 需求文档
 
-版本:v0.9(草案) · 日期:2026-10-31
-状态:待评审
-代号:`dora-tern-omp-usage`(仓库)(插件 id:`dora-tern-omp-usage`)
+版本:v1.0.0 · 日期:2026-10-31
+状态:已实现(随 v1.0.0 发布)
+仓库:`dora-tern-omp-usage`(插件 id:`dora-tern-omp-usage`)
 
 ---
+
+> 配套文档:[架构文档](ARCHITECTURE.md) · [实现指南](IMPLEMENTATION.md) · [API 使用说明](API.md)
 
 ## 1. 背景
 
