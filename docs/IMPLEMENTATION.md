@@ -70,6 +70,7 @@ fetch.service(5s)                           tick(1s / focus / window_start / bud
  → kv: usage / models / today / days         ├ read_dock:composer 树 → 模型芯片名
                                              ├ line.build → line.sheet → tern.css("usage-plus", css)
 sync 块:kv → ui.text(JSON 一行,≤7KB)      └ 状态栏(chrome.status,读 tick 缓存,不读 kv)
+        (载荷不变不出帧:只在底层 kv 时间戳变化时重渲染)
 ```
 
 **kv 键一览**(数据目录:`%LOCALAPPDATA%\Tern\plugin-data\dora-tern-omp-usage\kv.json`,
@@ -97,6 +98,14 @@ WSL 在 `~/.local/state/tern/plugin-data/...`):
   表名为 `plugin:local:dora-tern-omp-usage:usage-plus`。
 - **锚点选择器集中在 line.luau 顶部**(`METER`/`HOST_BASE`)。Tern 升级后若线条消失,先用诊断命令
   确认树可读,再 dump 表面对照新版 DOM 调整选择器。
+
+## 4.1 性能画像
+
+- 窗口 tick(1s):三次 kv 读 + `hosts:list` + composer 树(~40 节点)——与 jmazzola 同款节奏;
+- CSS 整表重写:数据变化或倒计时跳分时(约每分钟一次),单次 4~6KB 字符串拼接,可忽略;
+- sync 块只在载荷变化时出帧(载荷里没有任何随时间变化的字段),其余时间完全静默;
+- 窗口读块与块自刷新同为 5s 节拍;omp 进程 spawn 串行且受设置控制;
+- 内存观测:诊断命令会报告窗口 VM 的 Lua 堆(`collectgarbage("count")`)与 kv.json 体积。
 
 ## 5. 经验与教训
 
