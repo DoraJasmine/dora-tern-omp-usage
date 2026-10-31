@@ -1,6 +1,11 @@
 # Tern API 使用说明
 
 本文整理了插件用到的全部 Tern API,逐条说明其用途、用法与注意事项,并标注所在文件,便于查阅与维护。
+
+先解释一个贯穿全文的术语。官方文档把插件的结构称为 **halves**(部分):一个插件至多由两部分组成——
+**宿主半(host half,入口 `host.luau`)**运行在会话守护进程,负责与窗格相关的一切(块、取数、仪表盘);
+**窗口半(window half,入口 `window.luau`)**运行在每个 Tern 窗口的 UI 线程,负责界面行为(画线、
+状态栏、设置菜单)。下表"运行位置"一列即指这两者。
 官方文档:<https://docs.stencil.so/tern/>(每页均提供 `.md` 版本);类型定义见仓库根目录的 `tern.d.luau`,
 可用 `tern plugin types .` 重新生成。
 
@@ -8,7 +13,7 @@
 
 ## 0. 总览
 
-| API | 半区 | 用途 | 使用位置 |
+| API | 运行位置 | 用途 | 使用位置 |
 |---|---|---|---|
 | `tern.kv.get / set` | 双方 | 持久化:数据缓存与设置 | fetch / settings / 两入口 |
 | `tern.json.decode / encode` | 双方 | 解析 omp CLI 输出、sync 块载荷 | fetch / parse / line / window |
@@ -20,7 +25,7 @@
 | `tern.css` | 窗口 | 注入用量线/卡片样式表 | window |
 | `tern.chrome.status / refresh` | 窗口 | 状态栏今日段 | window |
 | `tern.command` | 窗口 | 面板/设置/刷新/仪表盘/诊断命令 | window |
-| `tern.context / plugin / runtime` | 双方 | 探针:确认运行半区与 kv 归属 | 两入口 |
+| `tern.context / plugin / runtime` | 双方 | 探针:确认运行位置与 kv 归属 | 两入口 |
 | `tern.on` (window_start / focus / budget) | 窗口 | 生命周期事件 | window |
 | `cx.session:focused / pane / panes` | 窗口 | 焦点判定、块扫描、主机映射 | window |
 | `cx.session:surface` | 窗口 | 读 composer 树(模型芯片名) | window |
