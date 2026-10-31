@@ -1,4 +1,4 @@
-# omp Usage Plus — 需求文档
+# Dora omp Usage — 需求文档
 
 版本:v0.9(草案) · 日期:2026-10-31
 状态:待评审
@@ -113,7 +113,7 @@
 
 ### FR-6 设置(P0)
 
-- FR-6.1 打开方式:键位 `Ctrl+Alt+U`(可改绑 `plugin.dora-tern-omp-usage.panel`)、命令面板 "omp Usage Plus: Settings panel"、状态栏 `usage` 段点击、悬停卡片尾行。面板在聚焦窗格旁打开,重复打开聚焦已有面板。
+- FR-6.1 打开方式:键位 `Ctrl+Alt+U`(可改绑 `plugin.dora-tern-omp-usage.panel`)、命令面板 "Dora omp Usage: Settings panel"、状态栏 `usage` 段点击、悬停卡片尾行。面板在聚焦窗格旁打开,重复打开聚焦已有面板。
 - FR-6.2 设置项(即时生效,所有窗口共享,存 `tern.kv`):
 
 | 组 | 项 | 默认 |
@@ -128,7 +128,7 @@
 | Alerts | 达到阈值/锁定/解锁时 toast(开/关) | 开 |
 | Language | en / zh-CN | 跟随 Tern,默认 en |
 
-- FR-6.3 命令面板提供 "omp Usage Plus: Settings…" 菜单版(等价功能,键盘友好):显示模式、选择提供商(多选列表)、排序、颜色。
+- FR-6.3 命令面板提供 "Dora omp Usage: Settings…" 菜单版(等价功能,键盘友好):显示模式、选择提供商(多选列表)、排序、颜色。
 - FR-6.4 设置写入统一走设置模块(校验 + `tern.kv`),面板/菜单/命令共用。
 - FR-6.5 告警 toast(P1):窗口升至阈值、锁定、重新可用时各一条,带重置倒计时;同窗口状态不重复提醒。
 
@@ -180,4 +180,4 @@
 | R5 | 多 Tern 窗口时 window 半各自查树,host 半单一轮询,数据一致性 | host 为唯一数据生产者(写 kv),window 只读,kv 原子读写 |
 | R6 | 今日统计依赖 `omp stats` 本机同步(stats.db 为空/未同步时恒为 0) | 文档说明;卡片尾行缺失时隐藏该行;后续可评估读 `~/.omp` 会话文件的替代方案(不承诺) |
 | Q1 | 状态栏今日段是否需要在非 agent 窗格隐藏?(joaodutra88 为 agent 窗格聚焦时显示) | 待定:默认跟随焦点,设置可改为常显 |
-| Q2 | 插件名/命令前缀:命令以 "omp Usage Plus:" 开头较长,是否用 "Usage+:"? | 待定 |
+| Q2 | 插件名/命令前缀:命令以 "Dora omp Usage:" 开头较长,是否用 "Usage+:"? | 待定 |

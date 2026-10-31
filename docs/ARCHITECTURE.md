@@ -1,4 +1,4 @@
-# omp Usage Plus — 架构文档
+# Dora omp Usage — 架构文档
 
 版本:v0.9(草案) · 日期:2026-10-31
 配套文档:[REQUIREMENTS.md](./REQUIREMENTS.md)
@@ -114,7 +114,7 @@ tern-dora-tern-omp-usage/
 ```toml
 schema = 1
 id = "dora-tern-omp-usage"
-name = "omp Usage Plus"
+name = "Dora omp Usage"
 version = "0.1.0"
 description = "Usage line above the omp composer (any provider omp reports: Kimi, Codex, Claude, …), today's tokens & cost, dashboard, settings panel."
 icon = "gauge"
@@ -123,7 +123,7 @@ window = "window.luau"
 
 [[blocks]]
 id = "dashboard"
-title = "omp Usage Plus"
+title = "Dora omp Usage"
 ```
 
 ## 5. 数据流与调度

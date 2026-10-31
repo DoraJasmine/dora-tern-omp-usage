@@ -616,7 +616,7 @@ end
 -- One dashboard per window: focus the open one, else open it beside the focused pane.
 function open_dashboard(cx: any)
 	for _, pane in cx.session:panes() do
-		if pane.title == "omp Usage Plus" then
+		if pane.title == "Dora omp Usage" then
 			cx.layout:focus(pane.pane)
 			return
 		end
@@ -629,7 +629,7 @@ end
 
 tern.command({
 	id = "panel",
-	title = "omp Usage Plus: Settings",
+	title = "Dora omp Usage: Settings",
 	icon = "gauge",
 	keys = { "ctrl+alt+u" },
 	run = open_menu,
@@ -637,14 +637,14 @@ tern.command({
 
 tern.command({
 	id = "settings",
-	title = "omp Usage Plus: Settings menu",
+	title = "Dora omp Usage: Settings menu",
 	icon = "gauge",
 	run = open_menu,
 })
 
 tern.command({
 	id = "refresh",
-	title = "omp Usage Plus: Refresh usage",
+	title = "Dora omp Usage: Refresh usage",
 	icon = "gauge",
 	run = function(cx)
 		fetch.kv_set("refresh_request", os.time() * 1000)
@@ -656,7 +656,7 @@ tern.command({
 
 tern.command({
 	id = "dashboard",
-	title = "omp Usage Plus: dashboard",
+	title = "Dora omp Usage: dashboard",
 	icon = "gauge",
 	run = open_dashboard,
 })
@@ -664,7 +664,7 @@ tern.command({
 -- What the plugin sees, for the times the line doesn't show: data ages, the chip, the provider it maps to.
 tern.command({
 	id = "diagnostics",
-	title = "omp Usage Plus: Diagnostics",
+	title = "Dora omp Usage: Diagnostics",
 	icon = "gauge",
 	run = function(cx)
 		local now = os.time() * 1000

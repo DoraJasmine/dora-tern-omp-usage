@@ -1,6 +1,6 @@
 # dora-tern-omp-usage
 
-**omp Usage Plus** — your omp usage limits shown just above the omp composer's context bar in
+**Dora omp Usage** — your omp usage limits shown just above the omp composer's context bar in
 [Tern](https://stencil.so/tern), for **every provider omp reports** (Kimi, Codex, Claude, Gemini, MiniMax, …),
 plus today's tokens & API-price cost with a per-provider breakdown, a 7-day dashboard, and a settings panel.
 
@@ -11,6 +11,8 @@ tern plugin install github.com/DoraJasmine/dora-tern-omp-usage
 ```
 
 Or paste the same address into Tern's **Preferences › Plugins › Install…**
+
+![The hover card over the usage line above the omp composer: Codex's 5h and 7d windows with meters, reset countdowns and today's totals for the pane's host](docs/images/hover-card.png)
 
 > 简体中文说明见 [README.zh-CN.md](README.zh-CN.md)
 
@@ -78,4 +80,5 @@ the Tern APIs this plugin relies on.
 
 ## License
 
-[MIT](LICENSE) © 2026 DoraJasmine
+[MIT](LICENSE) © 2026 DoraJasmine — third-party attributions and notices:
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)

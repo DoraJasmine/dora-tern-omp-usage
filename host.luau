@@ -53,7 +53,7 @@ tern.block.define("sync", {
 	end,
 
 	title = function(_state: any): string?
-		return "omp Usage Plus"
+		return "Dora omp Usage"
 	end,
 
 	view = function(_state: any, _cx: any): any
@@ -212,7 +212,7 @@ tern.block.define("dashboard", {
 	end,
 
 	title = function(_state: State): string?
-		return "omp Usage Plus"
+		return "Dora omp Usage"
 	end,
 
 	view = function(state: State, _cx: any): any

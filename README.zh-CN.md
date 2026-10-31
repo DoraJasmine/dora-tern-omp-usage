@@ -1,6 +1,6 @@
 # dora-tern-omp-usage
 
-**omp Usage Plus** —— 在 [Tern](https://stencil.so/tern) 中,把你的 omp 用量额度显示在 omp 输入栏上下文指示条的
+**Dora omp Usage** —— 在 [Tern](https://stencil.so/tern) 中,把你的 omp 用量额度显示在 omp 输入栏上下文指示条的
 正上方,**支持 omp 报告的所有提供商**(Kimi、Codex、Claude、Gemini、MiniMax……),并附带今日 token 用量与
 API 等效费用(含按提供商分解)、7 天仪表盘和图形化设置。
 
@@ -11,6 +11,8 @@ tern plugin install github.com/DoraJasmine/dora-tern-omp-usage
 ```
 
 或在 Tern 的 **设置 › 插件 › Install…** 中粘贴同一地址。
+
+![悬停在用量线上方的卡片:窗口计量器、重置倒计时,以及窗格所在主机的今日统计](docs/images/hover-card.png)
 
 English readme: [README.md](README.md)
 
@@ -70,4 +72,4 @@ tern plugin types ./dora-tern-omp-usage  # 重新生成 tern.d.luau 供 luau-lsp
 
 ## 许可
 
-[MIT](LICENSE) © 2026 DoraJasmine
+[MIT](LICENSE) © 2026 DoraJasmine —— 第三方来源与声明:[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
