@@ -440,6 +440,13 @@ end)
 
 -- ── settings, as menus (the canvas panel is a later milestone) ──────────────
 
+local open_dashboard: ((cx: any) -> ())? -- defined with the commands below
+local function open_dashboard_or_nil(cx: any)
+	if open_dashboard then
+		open_dashboard(cx)
+	end
+end
+
 local function after_change(cx: any)
 	if cx then
 		tick(cx)
@@ -629,7 +636,7 @@ local function open_menu(cx: any)
 			fetch.maybe_fetch("usage", true)
 			where:toast("success", L.toast_refresh_ok)
 		elseif item.pick == "dashboard" then
-			open_dashboard(where)
+			open_dashboard_or_nil(where)
 		elseif item.pick == "language" then
 			settings_lib.set({ language = if settings.language == "en" then "zh-CN" else "en" })
 			after_change(where)
@@ -652,10 +659,15 @@ end
 
 -- ── commands ────────────────────────────────────────────────────────────────
 
--- One dashboard per window: focus the open one, else open it beside the focused pane.
+-- The focused pane's dashboard block, if any. Matched by block kind, not title: the parked
+-- sync block carries the same title.
+local function info_is_dashboard(info: any): boolean
+	return type(info) == "table" and info.block == tern.plugin.id .. ".dashboard"
+end
+
 function open_dashboard(cx: any)
 	for _, pane in cx.session:panes() do
-		if pane.title == "Dora omp Usage" then
+		if info_is_dashboard(pane) then
 			cx.layout:focus(pane.pane)
 			return
 		end

@@ -59,11 +59,18 @@ function M.provider_label(provider: any): string
 	return id
 end
 
--- The provider a model chip's name suggests, via its first word ("Opus 5.5" → anthropic).
+-- The provider a model chip's name suggests, via progressively shorter prefixes of its first
+-- word ("Opus 5.5" → "opus" → anthropic; "K3.1 Pro" → "k3.1" → "k3" → kimi-code).
 function M.provider_hint(chip: any): string?
 	local text = string.lower(tostring(chip or ""))
-	local word = string.match(text, "^[^%s%d%.]+") or ""
-	return PREFIX_HINTS[word]
+	local word = string.match(text, "^[^%s]+") or ""
+	for end_pos = #word, 1, -1 do
+		local hit = PREFIX_HINTS[string.sub(word, 1, end_pos)]
+		if hit then
+			return hit
+		end
+	end
+	return nil
 end
 
 -- A limit's window as { key, label, ms }, matched by omp's id or its length; unknown windows keep their id.

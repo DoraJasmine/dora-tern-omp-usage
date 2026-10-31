@@ -85,12 +85,9 @@ tern.block.define("sync", {
 	end,
 })
 
--- One process at a time is started from a timer: a callback over 50 ms makes Tern turn off every timer of
--- the plugin until a reload, and on Windows starting a process takes a good part of that.
 -- ── the fetch service ───────────────────────────────────────────────────────
-
--- One process at a time is started from a timer: a callback over 50 ms makes Tern turn off every timer of
--- the plugin until a reload, and on Windows starting a process takes a good part of that.
+-- One process at a time is started from a timer: a callback over 50 ms makes Tern turn off every
+-- timer of the plugin until a reload, and on Windows starting a process takes a good part of that.
 every(5000, fetch.service)
 
 -- ── costs from the days the fetch service records ───────────────────────────
@@ -149,8 +146,6 @@ local function load(state: State)
 	end
 	state.loading = true
 	state.cx:render()
-	local settings = settings_lib.load()
-	local L = labels.get(settings.language)
 	local started = pcall(tern.process.run, { fetch.omp_bin(), "usage", "--history", "--json", "--days", "7" }, { timeout_ms = 60000 }, function(res: any)
 		if not alive(state) then
 			return

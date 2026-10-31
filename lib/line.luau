@@ -219,9 +219,6 @@ local function provider_windows(data: any, provider: string, bare: string, plan_
 		for _, window in worst do
 			table.insert(windows, window)
 		end
-		if plan_wide_only then
-			-- plan-wide rows only: saved resets keep their count but never expire the line's window
-		end
 	end
 	table.sort(windows, function(a: any, b: any)
 		if a.ms == b.ms then
@@ -379,8 +376,7 @@ local function line_of(settings: any, model: any): any
 	end
 
 	for g, group in model.groups do
-		local a, b = settings_lib.palette_for(settings, group.id)
-		local pa, pb = a, b
+		local pa, pb = settings_lib.palette_for(settings, group.id)
 		for w, window in group.windows do
 			local tone = tone_of(window.pct, settings.warn_at, settings.bad_at)
 			if w > 1 and several then
