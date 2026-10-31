@@ -1,7 +1,8 @@
 # 实现文档(维护者指南)
 
 面向后续维护者:代码怎么组织、数据怎么流动、**常见的修改去哪里改**、有哪些坑。
-设计背景见 [REQUIREMENTS.md](REQUIREMENTS.md) 与 [ARCHITECTURE.md](ARCHITECTURE.md);本文只讲实现。
+设计背景见 [REQUIREMENTS.md](REQUIREMENTS.md) 与 [ARCHITECTURE.md](ARCHITECTURE.md);
+每个 Tern API 的逐条说明见 [API.md](API.md);本文只讲实现。
 
 ---
 

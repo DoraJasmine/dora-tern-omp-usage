@@ -1,84 +1,76 @@
 # dora-tern-omp-usage
 
-**Dora omp Usage** — your omp usage limits shown just above the omp composer's context bar in
-[Tern](https://stencil.so/tern), for **every provider omp reports** (Kimi, Codex, Claude, Gemini, MiniMax, …),
-plus today's tokens & API-price cost with a per-provider breakdown, a 7-day dashboard, and a settings panel.
+**Dora omp Usage** —— 在 [Tern](https://stencil.so/tern) 中,把你的 omp 用量额度显示在 omp 输入栏上下文指示条的
+正上方,**支持 omp 报告的所有提供商**(Kimi、Codex、Claude、Gemini、MiniMax……),并附带今日 token 用量与
+API 等效费用(含按提供商分解)、7 天仪表盘和图形化设置。
 
-**One-line install, no omp configuration.**
+**一行安装,零 omp 配置。**
 
 ```sh
 tern plugin install github.com/DoraJasmine/dora-tern-omp-usage
 ```
 
-Or paste the same address into Tern's **Preferences › Plugins › Install…**
+或在 Tern 的 **设置 › 插件 › Install…** 中粘贴同一地址。
 
-![The hover card over the usage line above the omp composer: Codex's 5h and 7d windows with meters, reset countdowns and today's totals for the pane's host](docs/images/hover-card.png)
+![悬停在用量线上方的卡片:窗口计量器、重置倒计时,以及窗格所在主机的今日统计](docs/images/hover-card.png)
 
-> 简体中文说明见 [README.zh-CN.md](README.zh-CN.md)
+English readme: [README.en.md](README.en.md)
 
-## Requirements
+## 环境要求
 
-- Tern 0.8+ (tested on 0.9.8, Windows and WSL)
-- [omp](https://omp.sh) 18.9+ (tested on 18.14.1), signed in to at least one provider with usage limits
-- No omp extension, no `config.yml` edits, no restart — install and it works
+- Tern 0.8+(实测 0.9.8,Windows 与 WSL)
+- [omp](https://omp.sh) 18.9+(实测 18.14.1),已登录至少一个有用量限额的提供商
+- 不需要 omp 扩展、不改 `config.yml`、不用重启 —— 装完即用
 
-## What it shows
+## 功能一览
 
-- **Usage line** above the focused omp pane's context hairline: per-window bars filled to the share left, with
-  reset countdowns and saved resets, in each provider's colors (amber at 25% left, red at 10%).
-- **Hover card** with per-window meters, reset times and clock times, saved-reset expiries, today's totals and
-  settings shortcut. It stays open while you point at it.
-- **Model follow**: switches to the focused agent's provider within ~2 s of a model switch (Alt+P), and shows a
-  viewed subagent's model's provider.
-- **Per-host data**: a pane on a remote host (WSL, a server) shows that host's accounts and stats; local panes
-  show yours. Handled automatically — the plugin opens a small data block on each remote host and parks it out
-  of your tab bar.
-- **Status bar**: 🔥 today's tokens and 💸 today's API-price cost for the focused pane's host.
-- **Dashboard**: 7 days of usage history plus today/week/month API-price cost (`r` refreshes).
-- **Settings** (`Ctrl+Alt+U`, the status-bar `usage` segment, or the palette): show mode (current model /
-  all providers / selected), provider order, per-provider colors, thresholds, refresh intervals, status-bar
-  toggles, language (English / 简体中文).
+- **用量线**:聚焦的 omp 窗格上下文栏正上方,按窗口(5h/7d/…)显示填充条、剩余比例、重置倒计时与已存重置,
+  逐提供商配色(剩余 ≤25% 琥珀色,≤10% 红色)。
+- **悬停卡片**:逐窗口计量器、重置时间与时钟时间、已存重置的到期时间、今日总量与按提供商分解、设置入口。
+  鼠标移到卡片上不会消失(0.5s 宽限期)。
+- **模型跟随**:Alt+P 切换模型后约 2 秒内跟随当前提供商;查看子代理转录时跟随子代理的模型。
+- **按主机显示数据**:远程主机(WSL、服务器)上的窗格显示**那台主机**登录账号的额度与统计;本机窗格显示本机数据。
+  全自动 —— 插件会在远程主机上开一个小的数据块并立即驻留(park),不占标签页。
+- **状态栏**:🔥 今日 token 数、💸 今日 API 等效费用(跟随焦点窗格所在主机)。
+- **仪表盘**:近 7 天用量历史 + 今日/近 7 天/本月费用(`r` 刷新)。
+- **设置**(`Ctrl+Alt+U`、状态栏 `用量` 段、或命令面板):显示模式(当前模型/全部/勾选)、提供商排序、
+  逐提供商配色、阈值、刷新间隔、状态栏开关、界面语言(English / 简体中文)。
 
-## How the numbers are computed
+## 数字是怎么算的
 
-- **Limits** come from `omp usage --json` — account-level, whatever providers omp is signed into. New providers
-  appear with zero code changes.
-- **Today** sums `omp stats --json` hourly buckets since local midnight. The per-provider breakdown aggregates
-  `byModel` (input + output + cache tokens, the same semantics as the total).
-- **Prices** come from omp's model catalog (`omp models --json`): the API list price per million tokens for
-  input, output, cache reads and cache writes. The dollar amounts are therefore the **API-equivalent cost** of
-  your usage — what it would have cost at API rates — not your subscription bill.
+- **额度**来自 `omp usage --json` —— 账号级数据,omp 登录了什么就显示什么,新提供商零代码接入。
+- **今日**把 `omp stats --json` 的小时桶从当地零点起求和;按提供商分解聚合自 `byModel`
+  (input + output + cache,与总量同口径)。
+- **价格**来自 omp 的模型目录(`omp models --json`):各模型 input/output/cacheRead/cacheWrite 的
+  API 列表价(USD / 每百万 tokens)。因此金额是 **API 等效费用**(这些用量若按 API 直连要花多少),
+  不是订阅账单。
 
-## Multi-host
+## 多主机
 
-Tern windows show panes from every connected host, and a plugin's window half runs on the window's machine.
-This plugin bridges the gap the documented way: each host's host half renders a tiny `sync` block containing
-that machine's data as text; the window reads every sync block it can see (`cx.session:read`) and maps panes to
-hosts (`cx.hosts:list`). The sync block opens automatically when you work on a remote host and is parked out of
-your tab bar immediately.
+Tern 的窗口可以显示所有已连接主机的窗格,而插件的 window 半运行在窗口所在机器。本插件用文档支持的方式打通:
+每台主机的 host 半渲染一个极小的 `sync` 数据块(内容为本机数据的 JSON 文本),窗口读取所有能看到的 sync 块
+(`cx.session:read`),并用 `cx.hosts:list()` 把窗格映射到主机。当你在远程主机上工作时数据块自动开启,
+并立即驻流出标签栏。
 
-## Development
+## 开发
 
 ```sh
 git clone https://github.com/DoraJasmine/dora-tern-omp-usage
-tern plugin link ./dora-tern-omp-usage   # link your checkout
-tern plugin reload dora-tern-omp-usage   # after edits
-tern plugin types ./dora-tern-omp-usage  # regenerate tern.d.luau for luau-lsp
+tern plugin link ./dora-tern-omp-usage   # 链接你的检出
+tern plugin reload dora-tern-omp-usage   # 改代码后
+tern plugin types ./dora-tern-omp-usage  # 重新生成 tern.d.luau 供 luau-lsp 使用
 ```
 
-`docs/` carries the (Chinese) requirements and architecture documents, including the multi-host semantics and
-the Tern APIs this plugin relies on.
+`docs/` 里是中文的需求文档、架构文档、[实现文档](docs/IMPLEMENTATION.md)与
+[API 使用文档](docs/API.md)(每个 Tern API 是什么、怎么用、用在哪)。
 
-## Credits
+## 致谢
 
-- [jmazzola/tern-plugin-omp-usage](https://github.com/jmazzola/tern-plugin-omp-usage) (MIT) — the CSS technique
-  this plugin's line and card rendering is adapted from (the composer meter's `::before` content with one
-  `background-clip: text` gradient).
-- [joaodutra88/tern-omp-usage](https://github.com/joaodutra88/tern-omp-usage) (MIT) — the pure-Tern-plugin
-  fetch architecture, status-line segments, dashboard block and per-day stats accumulation this build extends
-  to every provider and host.
+- [jmazzola/tern-plugin-omp-usage](https://github.com/jmazzola/tern-plugin-omp-usage)(MIT)——
+  本插件线条与卡片的渲染技术(输入栏计量器的 `::before` content + 单层 `background-clip: text` 渐变)改写自此项目。
+- [joaodutra88/tern-omp-usage](https://github.com/joaodutra88/tern-omp-usage)(MIT)——
+  纯 Tern 插件的取数架构、状态栏分段、仪表盘块与逐日统计累计,本项目将其扩展到所有提供商与所有主机。
 
-## License
+## 许可
 
-[MIT](LICENSE) © 2026 DoraJasmine — third-party attributions and notices:
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
+[MIT](LICENSE) © 2026 DoraJasmine —— 第三方来源与声明:[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)
