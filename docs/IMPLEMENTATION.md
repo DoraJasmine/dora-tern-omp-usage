@@ -10,11 +10,11 @@
 
 ```
 plugin.toml          清单:id=dora-tern-omp-usage、host/window 入口、两个 block 声明(dashboard/sync)
-host.luau            宿主半(守护进程线程):
+host.luau            宿主端(host half,守护进程线程):
                        ├ fetch.service() 循环(每 5s,lib/fetch)
                        ├ sync 数据块(本机 kv → 一行 JSON 文本,5s 自刷新)
                        └ dashboard 仪表盘块(omp usage --history + kv.days 费用)
-window.luau          窗口半(每个窗口的 UI 线程):
+window.luau          窗口端(window half,每个窗口的 UI 线程):
                        ├ poll_loop 1s tick(焦点 pane → composer 树 → 画线)
                        ├ window_start / focus / budget 事件钩子
                        ├ 多主机:host 映射、sync 块读取、自动开块+驻留(park)
@@ -46,18 +46,18 @@ docs/                需求 / 架构 / 实现 / API 说明
 
 ## 2. 两条运行时
 
-- **宿主半**运行在会话守护进程(或无守护进程的窗口)的工作线程,单次调用预算 2 秒;**窗口半**运行在
+- **宿主端**运行在会话守护进程(或无守护进程的窗口)的工作线程,单次调用预算 2 秒;**窗口端**运行在
   每个窗口的 UI 线程,普通回调 50ms、chrome 格式化器仅 4ms。一旦超限,Tern 会**暂停相应钩子**
   (从 5 秒起指数退避)。插件已订阅 `budget` 事件:暂停时写入日志,恢复后立即重绘。
 - **window_start** 每窗口触发一次,时机在会话落定(保存的标签页恢复完毕)之后,是首帧绘制的正确入口。
   注意 **reload 不会重新触发它**(joaodutra88 的注释也强调过),因此加载期定时器仍需保留。
-- 宿主半与窗口半通过 **tern.kv** 共享数据(同一数据目录下的 kv.json)。`tern.kv.set` 采用"临时文件 + rename"
+- 宿主端与窗口端通过 **tern.kv** 共享数据(同一数据目录下的 kv.json)。`tern.kv.set` 采用"临时文件 + rename"
   原子写,并发写时后写者胜——因此取数环节设有 4 秒锁(`fetch_lock`)与串行队列(`busy`/`pending`)。
 
 ## 3. 数据流水线
 
 ```
-宿主半(每台机器)                           窗口半(每个窗口)
+宿主端(每台机器)                           窗口端(每个窗口)
 ────────────────────                        ─────────────────────
 fetch.service(5s)                           tick(1s / focus / window_start / budget-resumed)
  ├ maybe_fetch("usage")                      ├ refresh_host_map:cx.hosts:list() → pane→主机

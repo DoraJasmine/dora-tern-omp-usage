@@ -3,8 +3,8 @@
 本文整理了插件用到的全部 Tern API,逐条说明其用途、用法与注意事项,并标注所在文件,便于查阅与维护。
 
 先解释一个贯穿全文的术语。官方文档把插件的结构称为 **halves**(部分):一个插件至多由两部分组成——
-**宿主半(host half,入口 `host.luau`)**运行在会话守护进程,负责与窗格相关的一切(块、取数、仪表盘);
-**窗口半(window half,入口 `window.luau`)**运行在每个 Tern 窗口的 UI 线程,负责界面行为(画线、
+**宿主端(host half,入口 `host.luau`)**运行在会话守护进程,负责与窗格相关的一切(块、取数、仪表盘);
+**窗口端(window half,入口 `window.luau`)**运行在每个 Tern 窗口的 UI 线程,负责界面行为(画线、
 状态栏、设置菜单)。下表"运行位置"一列即指这两者。
 官方文档:<https://docs.stencil.so/tern/>(每页均提供 `.md` 版本);类型定义见仓库根目录的 `tern.d.luau`,
 可用 `tern plugin types .` 重新生成。
@@ -44,7 +44,7 @@
 
 ### tern.kv.get / set
 
-插件数据目录下 kv.json 的持久键值存储。同一台机器上,宿主半与各窗口的窗口半共享同一份数据;
+插件数据目录下 kv.json 的持久键值存储。同一台机器上,宿主端与各窗口的窗口端共享同一份数据;
 **不同主机之间互不同步**。
 
 所有调用均以 `pcall` 包裹——写入失败是静默的,pcall 至少保证调用方不被中断。各键的用途见
@@ -60,7 +60,7 @@
 ### tern.json.decode / encode
 
 decode 用于两处:解析 omp CLI 的输出(先从第一个 `{` 截取——omp 可能在 JSON 之前打印
-"Syncing session files..." 之类的进度行),以及解析 sync 块的 JSON 载荷。encode 用于宿主半
+"Syncing session files..." 之类的进度行),以及解析 sync 块的 JSON 载荷。encode 用于宿主端
 生成 sync 块载荷。
 
 注意 `omp models --json` 与 `omp stats --json` 的顶层是对象(如 `{models:[...]}`),不是裸数组。
@@ -176,7 +176,7 @@ Restart / Close(因此 sync 块的 view 全程 pcall,出错时把错误文本渲
 - **cx:toast(level, title, sub?)** —— success / info / error 提示(诊断、设置保存等);
 - **tern.log.info** —— budget 事件留痕(默认日志级别会过滤 info,需设置 `STENCIL_LOG` 才可见)。
 
-## 6. 宿主半
+## 6. 宿主端
 
 ### tern.block.define(id, {init, title, view, key?})
 
@@ -218,7 +218,7 @@ cacheRead、cacheWrite 四项)计算,是 **API 等效费用**——即"这些用
 
 ## 8. 调用纪律
 
-1. 窗口半普通回调 ≤50ms,格式化器 ≤4ms,宿主半 ≤2s;**超限钩子会被暂停**(budget 事件可见);
+1. 窗口端普通回调 ≤50ms,格式化器 ≤4ms,宿主端 ≤2s;**超限钩子会被暂停**(budget 事件可见);
 2. 原生调用(cx API、kv、fs、起进程)不计入预算,但格式化器中仍应避免;
 3. 每个回调至多启动一个进程,轮询串行执行并加锁;
 4. 一切外部输入(omp JSON、sync 文本、kv)进入渲染前逐字段做类型检查,数值必须有限;
