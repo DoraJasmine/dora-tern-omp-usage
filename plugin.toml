@@ -1,7 +1,7 @@
 schema = 1
 id = "dora-tern-omp-usage"
 name = "Dora omp Usage"
-version = "1.0.0"
+version = "1.1.0"
 description = "Usage line above the omp composer for every provider omp reports (Kimi, Codex, Claude, ...), today's tokens and cost, a dashboard and settings. One-line install: no omp configuration."
 icon = "gauge"
 host = "host.luau"
