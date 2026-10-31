@@ -34,7 +34,7 @@ tern.block.define("sync", {
 		-- state.payload is the block's text; it changes only when the underlying kv data
 		-- changes, so an unchanged check keeps the block silent between real updates
 		-- (no heartbeat frames to every attached window).
-		local state = { cx = cx, payload = nil as string? }
+		local state = { cx = cx, payload = nil }
 		local function build(): string?
 			local ok, body = pcall(function()
 				local usage = fetch.kv_get("usage")
