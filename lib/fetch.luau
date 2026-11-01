@@ -287,7 +287,7 @@ function M.maybe_fetch(source: string, kind: string, force: boolean): boolean
 			local next_kind = pending[source]
 			pending[source] = nil
 			if next_kind then
-				maybe_fetch(source, next_kind :: string, true)
+				M.maybe_fetch(source, next_kind :: string, true)
 			end
 		end)
 	end
@@ -341,15 +341,15 @@ function M.service()
 	if type(request) == "number" and request > last_refresh then
 		last_refresh = request
 		for _, source in M.sources() do
-			maybe_fetch(source, "usage", true)
+			M.maybe_fetch(source, "usage", true)
 		end
 		return
 	end
 	detect_wsl()
 	for _, source in M.sources() do
-		maybe_fetch(source, "usage", false)
-		maybe_fetch(source, "models", false)
-		maybe_fetch(source, "stats", false)
+		M.maybe_fetch(source, "usage", false)
+		M.maybe_fetch(source, "models", false)
+		M.maybe_fetch(source, "stats", false)
 	end
 end
 
