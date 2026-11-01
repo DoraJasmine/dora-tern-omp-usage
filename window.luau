@@ -275,10 +275,7 @@ local function deck_hide_css(): string
 	if #rules == 0 then
 		return ""
 	end
-	return "
-/* dora-tern-omp-usage: hide the parked sync block card */
-" .. table.concat(rules, "
-")
+	return "/* dora-tern-omp-usage: hide the parked sync block card */ " .. table.concat(rules, " ")
 end
 
 -- ── rendering ───────────────────────────────────────────────────────────────
