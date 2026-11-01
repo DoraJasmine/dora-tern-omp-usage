@@ -754,10 +754,10 @@ tern.command({
 		end
 		table.sort(sync_hosts)
 		local mem_ok, mem_kb = pcall(collectgarbage, "count")
-		local kv_ok, kv_text = pcall(tern.fs.read, tern.plugin.data .. "/kv.json", 1 << 20)
+		local kv_ok, kv_text = pcall(tern.fs.read, tern.plugin.data .. "/kv.json", 1048576)
 		local detail = string.format(
 			"host %s · sync blocks [%s] · usage %s · models %s · today %s · chip %s · provider %s
- lua heap %s · kv.json %s",
+lua heap %s · kv.json %s",
 			host_key,
 			table.concat(sync_hosts, ", "),
 			age(if type(usage) == "table" then usage.at else nil),
