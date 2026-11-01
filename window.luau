@@ -348,7 +348,7 @@ tern.chrome.status(function(pane: any): { any }?
 		table.insert(out, { text = "🔥 " .. line.compact_number(today.tokens :: number) .. " " .. L.tokens, command = PLUGIN .. "dashboard" })
 	end
 	if type(today) == "table" and type(today.cost) == "number" and settings.show_cost then
-		table.insert(out, { text = string.format("💸 $%.0f", today.cost :: number), command = PLUGIN .. "dashboard" })
+		table.insert(out, { text = string.format("💸 $%.2f", today.cost :: number), command = PLUGIN .. "dashboard" })
 	end
 	if pane.kind == "agent" then
 		table.insert(out, { text = L.usage, icon = "gauge", command = PLUGIN .. "panel" })

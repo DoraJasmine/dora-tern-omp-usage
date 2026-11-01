@@ -14,7 +14,7 @@ local en = {
 	saved_reset_plural = "+%d saved resets",
 	expires_in = "expires in %s",
 	settings_hint = "settings · Ctrl+Alt+U",
-	today_line = "today on %s  %s tokens · $%.0f",
+	today_line = "today on %s  %s tokens · $%.2f",
 	today_unavailable = "today on %s · data unavailable",
 	window_word = "%s window",
 	-- menu
@@ -75,7 +75,7 @@ local zh = {
 	saved_reset_plural = "+%d 次已存重置",
 	expires_in = "%s 后过期",
 	settings_hint = "设置 · Ctrl+Alt+U",
-	today_line = "%s 今日 %s tokens · $%.0f",
+	today_line = "%s 今日 %s tokens · $%.2f",
 	today_unavailable = "%s 今日 · 数据不可用",
 	window_word = "%s 窗口",
 	menu_title = "Dora omp Usage",
