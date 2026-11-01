@@ -304,13 +304,6 @@ tern.on("focus", function(_ev: any, cx: any)
 	tick(cx)
 end)
 
--- Official startup hook: fires once per window after the session has settled (saved tabs
--- restored), so the first draw sees the real panes instead of racing the restore.
-tern.on("window_start", function(cx: any)
-	tick(cx)
-	check_updates(cx)
-end)
-
 -- A paused hook stops this plugin's timers; log it and redraw the moment it resumes.
 tern.on("budget", function(ev: any, cx: any)
 	pcall(function()
@@ -358,6 +351,13 @@ end
 local function watchdog_loop()
 	fetch.service()
 	tern.timer(WATCHDOG_MS, watchdog_loop)
+
+-- Official startup hook: fires once per window after the session has settled (saved tabs
+-- restored), so the first draw sees the real panes instead of racing the restore.
+tern.on("window_start", function(cx: any)
+	tick(cx)
+	check_updates(cx)
+end)
 
 tern.timer(60000, update_loop)
 end
