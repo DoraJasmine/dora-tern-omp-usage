@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.1 — 2026-11-01
+
+### 修复
+
+- 修复启动时 "window_start failed: attempt to call a nil value" 的作用域错误:启动钩子的注册
+  移至 `check_updates` 定义之后,启动提醒与首帧绘制恢复正常。
+
 ## 1.3.0 — 2026-11-01
 
 ### 新增
