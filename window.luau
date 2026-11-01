@@ -265,19 +265,12 @@ end
 -- known here, so the card can be hidden with documented anchors: the element carrying
 -- [data-pane], its contents, and (when the engine supports :has()) its containers.
 local function deck_hide_css(): string
+	-- The deck card classes come from the 0.9.9 binary itself (verified against the docs'
+	-- .tn-dk-c naming: dk = deck). Card-level sweep; the container .tn-dk stays visible.
 	local rules: { string } = {}
-	-- Probe A: .tn-dk-c is the documented app tile on "tabs, pane rows and parked cards".
-	-- If tab icons vanish while the card stays, the sheet reaches the deck.
-	table.insert(rules, ".tn-dk-c { visibility: hidden !important; }")
-	-- Probe B: .tn-dk is very likely the deck strip container itself (dk = deck).
-	table.insert(rules, ".tn-dk { display: none !important; }")
-	-- Probe C: the data-pane id space - the window packs a host tag into pane ids, the DOM
-	-- may carry the packed id or its low words.
-	for _, id in sync_pane_ids do
-		table.insert(rules, string.format("[data-pane='%d'] { display: none !important; }", id))
-		table.insert(rules, string.format("[data-pane='%d'] { display: none !important; }", id % 4294967296))
-		table.insert(rules, string.format("[data-pane='%d'] { display: none !important; }", id % 65536))
-	end
+	table.insert(rules, ".tn-dk-c { display: none !important; }")
+	table.insert(rules, ".tn-dk-g, .tn-dk-gd { display: none !important; }")
+	table.insert(rules, ".tn-dk-pip { display: none !important; }")
 	if #rules == 0 then
 		return ""
 	end
