@@ -215,6 +215,8 @@ local function handle(source: string, kind: string, doc: any)
 		local ledger = M.kv_get(ledger_key)
 		ledger = if type(ledger) == "table" then ledger else {}
 		local today_providers = if type(ledger[day]) == "table" then ledger[day] else {}
+		-- Incremental deltas: byModel is cumulative over the stats window, so the delta
+		-- against the last seen cumulative attributes new usage per provider.
 		if type(prev) == "table" then
 			for p, v in cum do
 				local pr = prev[p]
@@ -228,6 +230,41 @@ local function handle(source: string, kind: string, doc: any)
 						today_providers[p] = slot
 					end
 				end
+			end
+		end
+		-- Reconcile with today's true total (the timeSeries): DB prunes and missed
+		-- fetches shift the split, never the total. The gap is distributed by each
+		-- provider's share of the cumulative mix; an overcount scales down.
+		local sum_t, sum_c = 0, 0
+		for _, slot in today_providers do
+			sum_t += slot.tokens
+			sum_c += slot.cost
+		end
+		local cum_t, cum_c = 0, 0
+		for _, v in cum do
+			cum_t += v.tokens
+			cum_c += v.cost
+		end
+		local gap_t = tokens - sum_t
+		local gap_c = cost - sum_c
+		if (gap_t > 0 or gap_c > 0) and cum_t > 0 then
+			for p, v in cum do
+				local slot = today_providers[p] or { tokens = 0, cost = 0 }
+				if gap_t > 0 then
+					slot.tokens += gap_t * (v.tokens / cum_t)
+				end
+				if gap_c > 0 then
+					slot.cost += gap_c * (v.cost / cum_c)
+				end
+				today_providers[p] = slot
+			end
+		elseif (gap_t < 0 or gap_c < 0) and sum_t > 0 then
+			local factor_t = if sum_t > 0 then math.max(0, tokens) / sum_t else 0
+			local factor_c = if sum_c > 0 then math.max(0, cost) / sum_c else 0
+			for p, slot in today_providers do
+				slot.tokens = slot.tokens * factor_t
+				slot.cost = slot.cost * factor_c
+				today_providers[p] = slot
 			end
 		end
 		ledger[day] = today_providers
