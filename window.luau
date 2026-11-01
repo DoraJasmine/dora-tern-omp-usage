@@ -372,7 +372,7 @@ tern.chrome.status(function(pane: any): { any }?
 	local out: { any } = {}
 	local up = update.get_latest()
 	if type(up) == "table" then
-		table.insert(out, { text = "↗ " .. tostring(up.version or ""), command = PLUGIN .. "update" })
+		table.insert(out, 1, { text = "↗ Update v" .. tostring(up.version or ""), tone = "accent", command = PLUGIN .. "update" })
 	end
 	-- First, so a narrow window that clips the end of the status line still shows it.
 	if type(shown_usage) == "table" and type(shown_usage.at) == "number" and os.time() * 1000 - shown_usage.at > STALE_MS then
