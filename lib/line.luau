@@ -72,9 +72,9 @@ local function compact_number(n: number): string
 	if n >= 1e9 then
 		return string.format("%.1fB", n / 1e9)
 	elseif n >= 1e6 then
-		return string.format("%.0fM", n / 1e6)
+		return string.format("%.1fM", n / 1e6)
 	elseif n >= 1e3 then
-		return string.format("%.0fk", n / 1e3)
+		return string.format("%.1fk", n / 1e3)
 	end
 	return tostring(math.floor(n))
 end
