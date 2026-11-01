@@ -80,6 +80,14 @@ function M.sources(): { string }
 			end
 		end
 	end
+	local remotes = M.kv_get("remote_hosts")
+	if type(remotes) == "table" and type(remotes.list) == "table" then
+		for _, host in remotes.list do
+			if type(host) == "string" and host ~= "" then
+				table.insert(out, "ssh:" .. host)
+			end
+		end
+	end
 	return out
 end
 
@@ -101,7 +109,24 @@ local function argv_for(source: string, kind: string): { string }
 		local distro = string.sub(source, 5)
 		return { "wsl.exe", "-d", distro, "--", "sh", "-lc", "omp " .. sub .. " --json" }
 	end
+	if string.sub(source, 1, 4) == "ssh:" then
+		-- the remote command runs through the account's login shell; sh -lc puts
+		-- ~/.local/bin on PATH the same way
+		local host = string.sub(source, 5)
+		return { "ssh", host, "sh -lc 'omp " .. sub .. " --json'" }
+	end
 	return { M.omp_bin(), sub, "--json" }
+end
+
+local function invalidate_argv(source: string): { string }
+	if M.is_wsl_source(source) then
+		local distro = string.sub(source, 5)
+		return { "wsl.exe", "-d", distro, "--", "sh", "-lc", "omp usage invalidate" }
+	end
+	if string.sub(source, 1, 4) == "ssh:" then
+		return { "ssh", string.sub(source, 5), "sh -lc 'omp usage invalidate'" }
+	end
+	return { M.omp_bin(), "usage", "invalidate" }
 end
 
 -- ── tracing ─────────────────────────────────────────────────────────────────
@@ -271,9 +296,7 @@ local function maybe_fetch(source: string, kind: string, force: boolean): boolea
 	end
 	if kind == "usage" and force then
 		-- A manual refresh asks omp to drop its cache first; regular polls take the cache as it is.
-		local inv = argv_for(source, "usage")
-		table.insert(inv, 2, "invalidate")
-		run(inv, "invalidate@" .. source, go)
+		run(invalidate_argv(source), "invalidate@" .. source, go)
 	else
 		go()
 	end

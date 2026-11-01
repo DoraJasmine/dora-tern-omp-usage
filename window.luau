@@ -8,6 +8,9 @@ local line = require("./lib/line")
 local fetch = require("./lib/fetch")
 
 local SHEET = "usage-plus"
+-- Module state, declared early so every function below shares one scope.
+local cached: any = { settings = nil, by_source = nil, sources_list = nil,
+	wsl_list = nil, remote_list = nil, sig = nil, host_sig = nil }
 local POLL_MS = 1000
 local WATCHDOG_MS = 10000
 local STALE_MS = 15 * 60 * 1000
@@ -86,14 +89,48 @@ end
 -- "today@<s>" / "days@<s>". The focused pane's host maps to its source: local panes to
 -- "local", panes on a WSL remote host (Tern names them "<user>@wsl") to that distro.
 
+local pane_host_map: { [number]: string } = {}
 local local_host_name: string = ""
 
-local function source_for_host(host_key: string, wsl_list: { string }?): string
+-- Builds the pane -> host map from the window's host list, reports the connected
+-- remote hosts to kv (the host-side fetch service cannot see Tern's host list),
+-- and records the local machine's display name.
+local function refresh_host_map(cx: any)
+	pane_host_map = {}
+	local remote_names: { string } = {}
+	local ok, hosts = pcall(function()
+		return cx.hosts:list()
+	end)
+	if ok and type(hosts) == "table" then
+		for _, host in hosts do
+			if type(host) == "table" then
+				if host.kind == "local" then
+					local_host_name = tostring(host.name or "")
+				elseif host.kind == "remote" and host.state == "connected" then
+					table.insert(remote_names, tostring(host.name or host.id))
+				end
+				if type(host.panes) == "table" then
+					local key = if host.kind == "local" then "local" else tostring(host.name or host.id)
+					for _, pid in host.panes do
+						pane_host_map[pid] = key
+					end
+				end
+			end
+		end
+	end
+	fetch.kv_set("remote_hosts", { at = os.time() * 1000, list = remote_names })
+	cached.remote_list = remote_names
+end
+
+local function source_for_host(host_key: string, wsl_list: { string }?, remote_list: { string }?): string
 	if host_key == "local" then
 		return "local"
 	end
 	if type(wsl_list) == "table" and #wsl_list > 0 then
 		return "wsl:" .. wsl_list[1]
+	end
+	if type(remote_list) == "table" and table.find(remote_list, host_key) then
+		return "ssh:" .. host_key
 	end
 	return "?"
 end
@@ -103,7 +140,7 @@ local function data_for(pane: number?): (string, any, string)
 	local label = if host_key == "local"
 		then (if local_host_name ~= "" then local_host_name else "本机")
 		else host_key
-	local source = source_for_host(host_key, cached.sources_list)
+	local source = source_for_host(host_key, cached.wsl_list, cached.remote_list)
 	if source == "?" then
 		-- a remote host with no fetchable source: limits fall back to the local accounts,
 		-- but the today row reads "data unavailable" instead of claiming local numbers
@@ -133,7 +170,6 @@ end
 
 -- The status formatter must not read kv (Tern's budget for it is tight), so the tick caches what it needs
 -- and asks for a status redraw only when something it shows changed.
-local cached: any = { settings = nil, by_source = nil, sources_list = nil, sig = nil, host_sig = nil }
 
 local function refresh_cache()
 	local settings = settings_lib.load()
@@ -149,6 +185,11 @@ local function refresh_cache()
 		table.insert(sig_parts, tostring(if type(today) == "table" then today.at else nil))
 	end
 	cached.sources_list = sources
+	cached.wsl_list = nil
+	local detected = fetch.kv_get("wsl_distros")
+	if type(detected) == "table" and type(detected.list) == "table" then
+		cached.wsl_list = detected.list
+	end
 	local sig = table.concat(sig_parts, "/")
 	if sig ~= cached.sig then
 		cached.sig = sig
@@ -202,8 +243,6 @@ local function tick(cx: any?)
 	local now = os.time() * 1000
 
 	refresh_host_map(cx)
-	refresh_sync_data(cx)
-	ensure_sync_block(cx)
 
 	local pane = cx.session:focused()
 	local focused_agent = false
@@ -286,7 +325,7 @@ tern.chrome.status(function(pane: any): { any }?
 	local settings = if cached.settings then cached.settings else settings_lib.load()
 	local L = labels.get(settings.language)
 	local host_key = pane_host_map[pane.pane] or "local"
-	local source = source_for_host(host_key, cached.sources_list)
+	local source = source_for_host(host_key, cached.wsl_list, cached.remote_list)
 	local by = if cached.by_source then cached.by_source[source] else nil
 	local shown_usage = if type(by) == "table" and type(by.usage) == "table" then by.usage else nil
 	local today = if type(by) == "table" and type(by.today) == "table" then by.today else nil
@@ -596,7 +635,7 @@ tern.command({
 			chip = (read_dock(cx, pane))
 		end
 		local host_key = (pane and pane_host_map[pane]) or "local"
-		local source = source_for_host(host_key, cached.sources_list)
+		local source = source_for_host(host_key, cached.wsl_list, cached.remote_list)
 		local models = fetch.kv_get("models@" .. source)
 		local provider = nil
 		if chip and type(models) == "table" and type(models.by_name) == "table" then
