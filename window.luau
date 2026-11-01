@@ -102,6 +102,7 @@ local pane_host_map: { [number]: string } = {}
 local local_host_name: string = ""
 local last_sync_read = 0
 local last_ensure = 0
+local unpark_tried = false -- surface an exited sync block once per window session
 
 local function refresh_host_map(cx: any)
 	local ok, hosts = pcall(function()
@@ -208,14 +209,25 @@ local function ensure_sync_block(cx: any)
 	end
 	for _, info in panes do
 		if type(info) == "table" and info.block == SYNC_BLOCK then
-			-- The sync block is infrastructure, not content: keep it out of the tab bar by
-			-- parking it into its session's deck (its view keeps rendering there).
-			if info.parked ~= true then
+			local here = pane_host_map[info.pane] == name
+			local d = host_data[name]
+			local producing = here and type(d) == "table" and type(d.usage) == "table"
+			if producing and info.parked ~= true then
+				-- healthy block: keep it out of the tab bar by parking it into the deck
 				pcall(function()
 					cx.layout:park(info.pane)
 				end)
+			elseif here and not producing and info.parked == true and not unpark_tried then
+				-- a parked block that produces nothing has exited: deal it back into the tab
+				-- so its Restart dialog is visible; Close also works (a fresh one opens)
+				unpark_tried = true
+				pcall(function()
+					cx.layout:unpark(info.pane)
+				end)
+				cx:toast("info", L.sync_exited_title, L.sync_exited_hint)
+				return
 			end
-			if pane_host_map[info.pane] == name then
+			if here then
 				return -- this host already has its sync block
 			end
 		end
