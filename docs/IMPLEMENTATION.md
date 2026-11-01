@@ -69,8 +69,8 @@ fetch.service(5s)                           tick(1s / focus / window_start / bud
          + by_provider 分解(差分累计)        ├ data_for(焦点pane):host_data[主机] 或本地 kv 兜底
  → kv: usage / models / today / days         ├ read_dock:composer 树 → 模型芯片名
                                              ├ line.build → line.sheet → tern.css("usage-plus", css)
-sync 块:kv → ui.text(JSON 一行,≤7KB)      └ 状态栏(chrome.status,读 tick 缓存,不读 kv)
-        (载荷不变不出帧:只在底层 kv 时间戳变化时重渲染)
+数据源:"local" + "wsl:<distro>"(wsl.exe 穿透)+ "ssh:<host>"(ssh 直连)
+        每源独立 kv 键与串行队列;窗口按焦点窗格所属主机选用数据源      └ 状态栏(chrome.status,读 tick 缓存,不读 kv)
 ```
 
 **kv 键一览**(数据目录:`%LOCALAPPDATA%\Tern\plugin-data\dora-tern-omp-usage\kv.json`,
