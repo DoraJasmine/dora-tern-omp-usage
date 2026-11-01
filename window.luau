@@ -93,6 +93,7 @@ end
 local pane_host_map: { [number]: string } = {}
 local local_host_name: string = ""
 local last_chip: string? = nil
+local update_toasted_run = false
 
 -- Builds the pane -> host map from the window's host list, reports the connected
 -- remote hosts to kv (the host-side fetch service cannot see Tern's host list),
@@ -307,6 +308,7 @@ end)
 -- restored), so the first draw sees the real panes instead of racing the restore.
 tern.on("window_start", function(cx: any)
 	tick(cx)
+	check_updates(cx)
 end)
 
 -- A paused hook stops this plugin's timers; log it and redraw the moment it resumes.
@@ -322,15 +324,20 @@ end)
 -- Update check: once a day (first pass a minute after load). A newer release toasts once
 -- per version and shows the ↗ segment until the plugin is updated.
 local function check_updates(cx: any?)
+	if settings_lib.load().update_check == false then
+		return
+	end
 	update.check(function(newver: string?, ucx: any?)
 		if newver == nil then
 			return
 		end
-		local seen = fetch.kv_get("update_seen")
-		if seen == newver then
+		-- The reminder repeats once per Tern start while outdated (the ↗ segment is the
+		-- persistent form; info toasts are transient, so repetition is the point).
+		if update_toasted_run then
+			tern.chrome.refresh()
 			return
 		end
-		fetch.kv_set("update_seen", newver)
+		update_toasted_run = true
 		local target = if ucx then ucx else cx
 		if target then
 			local settings = settings_lib.load()
@@ -567,6 +574,7 @@ local function open_menu(cx: any)
 		{ label = (if settings.show_tokens then "✓ " else "") .. "🔥 " .. L.tokens, group = "Status bar", pick = "tokens" },
 		{ label = (if settings.show_cost then "✓ " else "") .. "💰", group = "Status bar", pick = "cost" },
 		{ label = (if settings.alerts then "✓ " else "") .. "alerts", group = "Status bar", pick = "alerts" },
+		{ label = (if settings.update_check then "✓ " else "") .. L.menu_update_check, pick = "update_check" },
 		{ label = L.menu_reset, pick = "reset" },
 	}
 	cx:pick({ items = items, placeholder = L.menu_title, icon = "gauge" }):next(function(item: any?, _err: string?, next_cx: any?)
@@ -602,6 +610,9 @@ local function open_menu(cx: any)
 			after_change(where)
 		elseif item.pick == "alerts" then
 			settings_lib.set({ alerts = not settings.alerts })
+			after_change(where)
+		elseif item.pick == "update_check" then
+			settings_lib.set({ update_check = not settings.update_check })
 			after_change(where)
 		elseif item.pick == "reset" then
 			settings_lib.reset()
