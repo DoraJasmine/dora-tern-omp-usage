@@ -103,6 +103,7 @@ local local_host_name: string = ""
 local last_sync_read = 0
 local sync_pane_ids: { number } = {}
 local last_ensure = 0
+local last_park_why = 0
 
 local function refresh_host_map(cx: any)
 	local ok, hosts = pcall(function()
@@ -214,9 +215,19 @@ local function ensure_sync_block(cx: any)
 			-- The sync block is infrastructure: keep it out of the tab bar by parking it
 			-- into its session's deck (its view keeps rendering there).
 			if info.parked ~= true then
-				pcall(function()
-					cx.layout:park(info.pane)
+				local pok, pwhy = pcall(function()
+					return cx.layout:park(info.pane)
 				end)
+				-- park answers (false, why) for panes it cannot deck (e.g. a floating pip):
+				-- surface the reason instead of failing silently, throttled to once a minute.
+				if os.time() - (last_park_why or 0) > 60 then
+					last_park_why = os.time()
+					if pok == false or pwhy then
+						cx:toast("info", "park: " .. tostring(pok) .. " " .. tostring(pwhy or "ok"), info.title or "")
+					else
+						cx:toast("info", "park: ok", info.title or "")
+					end
+				end
 			end
 			if pane_host_map[info.pane] == name then
 				return -- this host already has its sync block
