@@ -4,7 +4,7 @@
 -- joaodutra88/tern-omp-usage.
 local M = {}
 
-M.VERSION = "1.2.1"
+M.VERSION = "1.2.2"
 local REPO_INSTALL = "github.com/DoraJasmine/dora-tern-omp-usage"
 local FEED = "https://github.com/DoraJasmine/dora-tern-omp-usage/releases.atom"
 
