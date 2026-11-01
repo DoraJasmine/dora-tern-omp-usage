@@ -1,5 +1,5 @@
--- Host half: the fetch service (usage / models / today, kept fresh in tern.kv even with no window open)
--- and the dashboard block (7 days of usage history and API-price costs).
+-- Host half: the fetch service (per-source usage / models / today, kept fresh in tern.kv
+-- even with no window open) and the dashboard block (7 days of history and API-price costs).
 local parse = require("./lib/parse")
 local labels = require("./lib/labels")
 local settings_lib = require("./lib/settings")
@@ -7,15 +7,10 @@ local fetch = require("./lib/fetch")
 
 local ui = tern.ui
 
--- Where this host half runs and whose kv it sees.
-pcall(tern.kv.set, "probe_host", {
-	context = tern.context,
-	plugin_dir = tern.plugin.dir,
-	data_dir = tern.plugin.data,
-	os = tern.runtime.os,
-	at = os.time(),
-})
-
+-- ── the fetch service ───────────────────────────────────────────────────────
+-- One process at a time per source is started from a timer: a callback over the budget makes
+-- Tern turn off every timer of the plugin until a reload, and on Windows starting a process
+-- takes a good part of that. Each source's queue is serial (lib/fetch).
 local function every(ms: number, fn: () -> ())
 	local function loop()
 		fn()
@@ -24,97 +19,43 @@ local function every(ms: number, fn: () -> ())
 	loop()
 end
 
--- ── the sync block: this machine's data as one JSON line ────────────────────
--- A window attached to any host can read a plugin block's text (cx.session:read),
--- and remote hosts' blocks appear in that window like any pane. This block carries
--- this machine's kv (usage/today/models) so a window showing this host's panes can
--- display THIS host's accounts and stats. Re-renders every 5 s while open.
-tern.block.define("sync", {
-	init = function(cx: any, _args: { string }, _saved: any): any
-		-- state.payload is the block's text; it changes only when the underlying kv data
-		-- changes, so an unchanged check keeps the block silent between real updates
-		-- (no heartbeat frames to every attached window).
-		local state = { cx = cx, payload = nil }
-		local function build(): string?
-			local ok, body = pcall(function()
-				local usage = fetch.kv_get("usage")
-				local today = fetch.kv_get("today")
-				local models = fetch.kv_get("models")
-				local compact_models = nil
-				if type(models) == "table" then
-					compact_models = { at = models.at, by_name = models.by_name, by_provider = models.by_provider }
-				end
-				local out = tern.json.encode({ usage = usage, today = today, models = compact_models })
-				-- The block read caps its text (8 KB default): drop the models catalog first.
-				if #out > 7000 then
-					out = tern.json.encode({ usage = usage, today = today, models = nil })
-				end
-				return out
-			end)
-			if not ok then
-				return "usage-plus sync error: " .. tostring(body)
-			end
-			return body :: string
-		end
-		local function loop()
-			local alive = true
-			local ok_list, panes = pcall(tern.pane.list)
-			if ok_list and type(panes) == "table" then
-				alive = false
-				for _, p in panes do
-					if p.pane == cx.pane then
-						alive = true
-						break
-					end
-				end
-			end
-			if not alive then
-				return -- the block closed; stop refreshing
-			end
-			local ok, payload = pcall(build)
-			if ok and payload ~= state.payload then
-				state.payload = payload
-				pcall(function()
-					state.cx:render()
-				end)
-			end
-			tern.timer(5000, loop)
-		end
-		tern.timer(500, loop)
-		return state
-	end,
-
-	title = function(_state: any): string?
-		return "Dora omp Usage"
-	end,
-
-	view = function(state: any, _cx: any): any
-		-- state.payload is kept current by the loop; an unchanged payload renders no frame,
-		-- so the block stays silent between real data updates.
-		return { main = ui.text(ui.span(state.payload or "")) }
-	end,
-})
-
--- ── the fetch service ───────────────────────────────────────────────────────
--- One process at a time is started from a timer: a callback over 50 ms makes Tern turn off every
--- timer of the plugin until a reload, and on Windows starting a process takes a good part of that.
 every(5000, fetch.service)
 
--- ── costs from the days the fetch service records ───────────────────────────
+-- ── costs, aggregated over every source the fetch service records ───────────
 
-local function costs(days: any, now: number): any
+local function costs(now: number): any
 	local month = os.date("%Y-%m", now) :: string
 	local r = { today = 0, week = 0, month = 0, last7 = {} }
-	for key, d in type(days) == "table" and days or {} do
-		if type(d) == "table" and type(d.cost) == "number" and string.sub(key, 1, 7) == month then
-			r.month += d.cost
+	local per_day: { [string]: number } = {}
+	for _, source in fetch.sources() do
+		local days = fetch.kv_get("days@" .. source)
+		if type(days) == "table" then
+			for key, d in days do
+				if type(d) == "table" and type(d.cost) == "number" then
+					if string.sub(key, 1, 7) == month then
+						r.month += d.cost
+					end
+					per_day[key] = (per_day[key] or 0) + d.cost
+				end
+			end
+		end
+	end
+	-- legacy flat days, recorded before per-source keys
+	local legacy = fetch.kv_get("days")
+	if type(legacy) == "table" then
+		for key, d in legacy do
+			if type(d) == "table" and type(d.cost) == "number" then
+				if string.sub(key, 1, 7) == month then
+					r.month += d.cost
+				end
+				per_day[key] = (per_day[key] or 0) + d.cost
+			end
 		end
 	end
 	for i = 6, 0, -1 do
 		local t = now - i * 86400
 		local key = os.date("%Y-%m-%d", t) :: string
-		local d = days and days[key] or nil
-		local cost = if type(d) == "table" and type(d.cost) == "number" then d.cost else 0
+		local cost = per_day[key] or 0
 		r.week += cost
 		table.insert(r.last7, { os.date("%m-%d", t), cost })
 		if i == 0 then
@@ -249,9 +190,8 @@ tern.block.define("dashboard", {
 		else
 			table.insert(parts, ui.progress(nil, L.dash_loading))
 		end
-		local days = fetch.kv_get("days")
-		if type(days) == "table" and next(days) ~= nil then
-			local c = costs(days, os.time())
+		local c = costs(os.time())
+		if c.week > 0 or c.month > 0 or c.today > 0 then
 			table.insert(parts, ui.card(L.dash_cost, {
 				ui.kv({
 					{ L.dash_today, money(c.today) },

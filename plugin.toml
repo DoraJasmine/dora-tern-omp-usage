@@ -11,6 +11,3 @@ window = "window.luau"
 id = "dashboard"
 title = "Dora omp Usage"
 
-[[blocks]]
-id = "sync"
-title = "Dora omp Usage"

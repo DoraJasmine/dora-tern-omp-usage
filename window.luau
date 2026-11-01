@@ -12,15 +12,6 @@ local POLL_MS = 1000
 local WATCHDOG_MS = 10000
 local STALE_MS = 15 * 60 * 1000
 
--- Where this window half runs and whose kv it sees (answers the multi-host question empirically).
-pcall(tern.kv.set, "probe_window", {
-	context = tern.context,
-	plugin_dir = tern.plugin.dir,
-	data_dir = tern.plugin.data,
-	os = tern.runtime.os,
-	at = os.time(),
-})
-
 local FOCUS_ROLE = "omp.composer.focus"
 local MODEL_ROLE = "omp.composer.model"
 local NAME_SUFFIX = "/name"
@@ -89,196 +80,44 @@ local function read_dock(cx: any, pane: number): (string?, boolean)
 	return dock_chip(if ok then tree else nil)
 end
 
--- ── per-host data: sync blocks carry each host's kv to every window ─────────
--- The host half renders a `sync` block whose text is this machine's kv as JSON.
--- A window reads every sync block it can see (local and remote hosts'), maps each
--- pane to its host (cx.hosts:list supplies hosts with their pane ids), and shows
--- the data of the host the focused pane belongs to.
+-- ── per-host data: one fetch source per host ────────────────────────────
+-- Sources are "local" and one per detected WSL distro ("wsl:<distro>"), fetched by
+-- lib/fetch (on Windows through wsl.exe) and keyed in kv as "usage@<s>" / "models@<s>" /
+-- "today@<s>" / "days@<s>". The focused pane's host maps to its source: local panes to
+-- "local", panes on a WSL remote host (Tern names them "<user>@wsl") to that distro.
 
-local SYNC_BLOCK = tern.plugin.id .. ".sync"
-local SYNC_ERROR_PREFIX = "usage-plus sync error: "
-local host_data: { [string]: any } = {} -- host key ("local" or name) → {usage, today, models, at}
-local pane_host_map: { [number]: string } = {}
 local local_host_name: string = ""
-local last_sync_read = 0
-local sync_pane_ids: { number } = {}
-local last_ensure = 0
 
-local function refresh_host_map(cx: any)
-	local ok, hosts = pcall(function()
-		return cx.hosts:list()
-	end)
-	pane_host_map = {}
-	if ok and type(hosts) == "table" then
-		for _, host in hosts do
-			if type(host) == "table" then
-				if host.kind == "local" then
-					local_host_name = tostring(host.name or "")
-				end
-				if type(host.panes) == "table" then
-					local key = if host.kind == "local" then "local" else tostring(host.name or host.id)
-					for _, pid in host.panes do
-						pane_host_map[pid] = key
-					end
-				end
-			end
-		end
+local function source_for_host(host_key: string, wsl_list: { string }?): string
+	if host_key == "local" then
+		return "local"
 	end
+	if type(wsl_list) == "table" and #wsl_list > 0 then
+		return "wsl:" .. wsl_list[1]
+	end
+	return "?"
 end
 
-local function decode_payload(text: string): any
-	local at = string.find(text or "", "{", 1, true)
-	if not at then
-		return nil
-	end
-	local ok, doc = pcall(tern.json.decode, string.sub(text, at))
-	return if ok then doc else nil
-end
-
-local function refresh_sync_data(cx: any)
-	local now = os.time()
-	if now - last_sync_read < 5 then
-		return
-	end
-	last_sync_read = now
-	local ok, panes = pcall(function()
-		return cx.session:panes()
-	end)
-	if not ok or type(panes) ~= "table" then
-		return
-	end
-	sync_pane_ids = {}
-	for _, info in panes do
-		if type(info) == "table" and info.block == SYNC_BLOCK then
-			table.insert(sync_pane_ids, info.pane)
-			local ok_read, answer = pcall(function()
-				return cx.session:read(info.pane, { max_chars = 8000 })
-			end)
-			if ok_read and type(answer) == "table" and answer.kind == "plugin" and type(answer.text) == "string" then
-				local text = answer.text :: string
-				local key = pane_host_map[info.pane] or "local"
-				if string.sub(text, 1, #SYNC_ERROR_PREFIX) == SYNC_ERROR_PREFIX then
-					-- the sync block is alive but its payload failed: surface the reason
-					host_data[key] = { sync_error = string.sub(text, #SYNC_ERROR_PREFIX + 1), at = os.time() * 1000 }
-				else
-					local doc = decode_payload(text)
-					if doc ~= nil then
-						host_data[key] = doc
-					end
-				end
-			end
-		end
-	end
-end
-
--- Opens this host's sync block once, when the window's current host is remote (the
--- local machine's data needs no block: the window half reads the local kv directly).
-local function ensure_sync_block(cx: any)
-	local now = os.time()
-	if now - last_ensure < 5 then
-		return
-	end
-	last_ensure = now
-	local ok, current = pcall(function()
-		return cx.hosts:current()
-	end)
-	if not ok or type(current) ~= "table" or current.kind ~= "remote" then
-		return
-	end
-	local name = tostring(current.name or current.id)
-	-- Only offer the block kind once the current host's catalog is ready: calling
-	-- cx:new_block earlier prints "no block type ... on this host" into the pane.
-	local ok_types, types = pcall(function()
-		return cx.session:block_types()
-	end)
-	local catalog_ready = false
-	if ok_types and type(types) == "table" then
-		for _, bt in types do
-			if type(bt) == "table" and bt.kind == SYNC_BLOCK then
-				catalog_ready = true
-				break
-			end
-		end
-	end
-	if not catalog_ready then
-		return -- retry on a later tick
-	end
-	local ok2, panes = pcall(function()
-		return cx.session:panes()
-	end)
-	if not ok2 or type(panes) ~= "table" then
-		return
-	end
-	for _, info in panes do
-		if type(info) == "table" and info.block == SYNC_BLOCK then
-			-- The sync block is infrastructure: keep it out of the tab bar by parking it
-			-- into its session's deck (its view keeps rendering there).
-			if info.parked ~= true then
-				pcall(function()
-					cx.layout:park(info.pane)
-				end)
-			end
-			if pane_host_map[info.pane] == name then
-				return -- this host already has its sync block
-			end
-		end
-	end
-	local opened: any = nil
-	local ok_open = pcall(function()
-		opened = cx:new_block(SYNC_BLOCK, nil, "tab", { focus = false })
-	end)
-	if ok_open and type(opened) == "number" then
-		pcall(function()
-			cx.layout:park(opened :: number)
-		end)
-	end
-end
-
--- The focused pane's host key ("local" or the host's name), that host's data and the
--- label the card shows. A remote host without (fresh) sync data falls back to the local
--- accounts for the LIMITS, but its today row reads "data unavailable" instead of
--- claiming the local machine's numbers.
 local function data_for(pane: number?): (string, any, string)
-	local key = (pane and pane_host_map[pane]) or "local"
-	if key ~= "local" then
-		local data = host_data[key]
-		if type(data) == "table" and type(data.usage) == "table" then
-			return key, data, key
-		end
-		local today = nil
-		local d = host_data[key]
-		if type(d) == "table" then
-			today = d.today
-		end
-		return key, { usage = fetch.kv_get("usage"), models = fetch.kv_get("models"), today = today, at = os.time() * 1000 }, key
+	local host_key = (pane and pane_host_map[pane]) or "local"
+	local label = if host_key == "local"
+		then (if local_host_name ~= "" then local_host_name else "本机")
+		else host_key
+	local source = source_for_host(host_key, cached.sources_list)
+	if source == "?" then
+		-- a remote host with no fetchable source: limits fall back to the local accounts,
+		-- but the today row reads "data unavailable" instead of claiming local numbers
+		return host_key, {
+			usage = fetch.kv_get("usage@local"),
+			models = fetch.kv_get("models@local"),
+			today = nil,
+		}, label
 	end
-	local label = if local_host_name ~= "" then local_host_name else "本机"
-	return "local", {
-		usage = fetch.kv_get("usage"),
-		models = fetch.kv_get("models"),
-		today = fetch.kv_get("today"),
-		at = os.time() * 1000,
+	return source, {
+		usage = fetch.kv_get("usage@" .. source),
+		models = fetch.kv_get("models@" .. source),
+		today = fetch.kv_get("today@" .. source),
 	}, label
-end
-
--- The parked sync block shows up as a card in Tern 0.9.9's deck strip. Its pane id is
--- known here, so the card can be hidden with documented anchors: the element carrying
--- [data-pane], its contents, and (when the engine supports :has()) its containers.
-local function deck_hide_css(): string
-	-- The deck card classes come from the 0.9.9 binary itself (verified against the docs'
-	-- .tn-dk-c naming: dk = deck). Card-level sweep; the container .tn-dk stays visible.
-	local rules: { string } = {}
-	table.insert(rules, ".tn-dk-c { display: none !important; }")
-	table.insert(rules, ".tn-dk-g, .tn-dk-gd { display: none !important; }")
-	table.insert(rules, ".tn-dk-pip { display: none !important; }")
-	-- The block's own content surface (documented anchor): hiding it shrinks the floating
-	-- card to its title bar. The card chrome itself is not reachable with supported
-	-- selectors (no ancestor selection, :has() unsupported).
-	table.insert(rules, "[data-surface='plugin." .. tern.plugin.id .. ".sync'] { display: none !important; }")
-	if #rules == 0 then
-		return ""
-	end
-	return "/* dora-tern-omp-usage: hide the parked sync block card */ " .. table.concat(rules, " ")
 end
 
 -- ── rendering ───────────────────────────────────────────────────────────────
@@ -294,18 +133,23 @@ end
 
 -- The status formatter must not read kv (Tern's budget for it is tight), so the tick caches what it needs
 -- and asks for a status redraw only when something it shows changed.
-local cached: any = { settings = nil, usage = nil, today = nil, sig = nil }
+local cached: any = { settings = nil, by_source = nil, sources_list = nil, sig = nil, host_sig = nil }
 
 local function refresh_cache()
 	local settings = settings_lib.load()
 	cached.settings = settings
-	cached.usage = fetch.kv_get("usage")
-	cached.today = fetch.kv_get("today")
-	local sig = table.concat({
-		tostring(if type(cached.usage) == "table" then cached.usage.at else nil),
-		tostring(if type(cached.today) == "table" then cached.today.at else nil),
-		tostring(settings.show_tokens), tostring(settings.show_cost), tostring(settings.alerts), settings.language,
-	}, "/")
+	cached.by_source = {}
+	local sources = fetch.sources()
+	local sig_parts: { string } = { tostring(settings.show_tokens), tostring(settings.show_cost), tostring(settings.alerts), settings.language }
+	for _, source in sources do
+		local usage = fetch.kv_get("usage@" .. source)
+		local today = fetch.kv_get("today@" .. source)
+		cached.by_source[source] = { usage = usage, today = today }
+		table.insert(sig_parts, tostring(if type(usage) == "table" then usage.at else nil))
+		table.insert(sig_parts, tostring(if type(today) == "table" then today.at else nil))
+	end
+	cached.sources_list = sources
+	local sig = table.concat(sig_parts, "/")
 	if sig ~= cached.sig then
 		cached.sig = sig
 		tern.chrome.refresh()
@@ -365,7 +209,7 @@ local function tick(cx: any?)
 		focused_agent = ok and type(info) == "table" and info.kind == "agent"
 	end
 	if not focused_agent then
-		install(deck_hide_css())
+		install("")
 		return
 	end
 
@@ -381,7 +225,7 @@ local function tick(cx: any?)
 		chip = chip,
 	}, now)
 	if #model.groups == 0 then
-		install(deck_hide_css())
+		install("")
 		return
 	end
 	-- redraw the status bar when the shown host's data changed
@@ -390,7 +234,7 @@ local function tick(cx: any?)
 		cached.host_sig = host_sig
 		tern.chrome.refresh()
 	end
-	install(line.sheet(settings, model, L, today_text(settings, host_label, data.today), data.today, now) .. deck_hide_css())
+	install(line.sheet(settings, model, L, today_text(settings, host_label, data.today), data.today, now))
 end
 
 local function poll_loop(cx: any?)
@@ -437,14 +281,15 @@ tern.chrome.status(function(pane: any): { any }?
 	local settings = if cached.settings then cached.settings else settings_lib.load()
 	local L = labels.get(settings.language)
 	local host_key = pane_host_map[pane.pane] or "local"
-	local data = host_data[host_key]
-	local shown_usage = if host_key ~= "local" and type(data) == "table" and type(data.usage) == "table"
-		then data.usage
-		else cached.usage
-	local today = if host_key ~= "local" and type(data) == "table" and type(data.today) == "table"
-		then data.today
-		else cached.today
+	local source = source_for_host(host_key, cached.sources_list)
+	local by = if cached.by_source then cached.by_source[source] else nil
+	local shown_usage = if type(by) == "table" and type(by.usage) == "table" then by.usage else nil
+	local today = if type(by) == "table" and type(by.today) == "table" then by.today else nil
 	local out: { any } = {}
+	-- First, so a narrow window that clips the end of the status line still shows it.
+	if type(shown_usage) == "table" and type(shown_usage.at) == "number" and os.time() * 1000 - shown_usage.at > STALE_MS then
+		table.insert(out, { text = "⚠", tone = "error", command = PLUGIN .. "diagnostics" })
+	end	local out: { any } = {}
 	-- First, so a narrow window that clips the end of the status line still shows it.
 	if type(shown_usage) == "table" and type(shown_usage.at) == "number" and os.time() * 1000 - shown_usage.at > STALE_MS then
 		table.insert(out, { text = "⚠", tone = "error", command = PLUGIN .. "diagnostics" })
@@ -744,12 +589,14 @@ tern.command({
 		local now = os.time() * 1000
 		local settings = settings_lib.load()
 		local L = labels.get(settings.language)
-		local usage, models, today = fetch.kv_get("usage"), fetch.kv_get("models"), fetch.kv_get("today")
 		local pane = cx.session:focused()
 		local chip = nil
 		if pane then
 			chip = (read_dock(cx, pane))
 		end
+		local host_key = (pane and pane_host_map[pane]) or "local"
+		local source = source_for_host(host_key, cached.sources_list)
+		local models = fetch.kv_get("models@" .. source)
 		local provider = nil
 		if chip and type(models) == "table" and type(models.by_name) == "table" then
 			local entry = models.by_name[chip :: string]
@@ -758,27 +605,25 @@ tern.command({
 		local function age(at: any): string
 			return if type(at) == "number" then line.compact_number(math.floor((now - at) / 1000)) .. "s ago" else "never"
 		end
-		local host_key = (pane and pane_host_map[pane]) or "local"
-		local sync_hosts: { string } = {}
-		for key in host_data do
-			table.insert(sync_hosts, key)
+		local parts: { string } = { "host " .. host_key }
+		table.insert(parts, "source " .. source)
+		for _, src in fetch.sources() do
+			local u = fetch.kv_get("usage@" .. src)
+			local t = fetch.kv_get("today@" .. src)
+			table.insert(parts, string.format("%s: usage %s · today %s", src,
+				age(if type(u) == "table" then u.at else nil),
+				age(if type(t) == "table" then t.at else nil)))
 		end
-		table.sort(sync_hosts)
+		table.insert(parts, "chip " .. (chip or "-") .. " · provider " .. (provider or "?"))
 		local mem_ok, mem_kb = pcall(collectgarbage, "count")
 		local kv_ok, kv_text = pcall(tern.fs.read, tern.plugin.data .. "/kv.json", 1048576)
-		local detail = string.format(
-			"host %s · sync blocks [%s] · usage %s · models %s · today %s · chip %s · provider %s\nlua heap %s · kv.json %s",
-			host_key,
-			table.concat(sync_hosts, ", "),
-			age(if type(usage) == "table" then usage.at else nil),
-			age(if type(models) == "table" then models.at else nil),
-			age(if type(today) == "table" then today.at else nil),
-			chip or "-",
-			provider or "?",
+		table.insert(parts, string.format("lua heap %s · kv.json %s",
 			if mem_ok and type(mem_kb) == "number" then string.format("%.0f KB", mem_kb) else "n/a",
-			if kv_ok and type(kv_text) == "string" then string.format("%.1f KB", #kv_text / 1024) else "n/a"
-		)
+			if kv_ok and type(kv_text) == "string" then string.format("%.1f KB", #kv_text / 1024) else "n/a")))
+		local detail = table.concat(parts, " · ")
+		local usage = fetch.kv_get("usage@" .. source)
 		local stale = type(usage) == "table" and type(usage.at) == "number" and now - usage.at > STALE_MS
+		local stale = type(usage) == "table"		local stale = type(usage) == "table" and type(usage.at) == "number" and now - usage.at > STALE_MS
 		cx:toast(if stale then "error" else "info", L.menu_title, detail .. (if stale then " · " .. L.toast_stale else ""))
 	end,
 })
