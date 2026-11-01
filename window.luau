@@ -551,7 +551,9 @@ local function open_menu(cx: any)
 			open_colors(where)
 		elseif item.pick == "refresh" then
 			fetch.kv_set("refresh_request", os.time() * 1000)
-			fetch.maybe_fetch("usage", true)
+			for _, src in fetch.sources() do
+				fetch.maybe_fetch(src, "usage", true)
+			end
 			where:toast("success", L.toast_refresh_ok)
 		elseif item.pick == "dashboard" then
 			open_dashboard_or_nil(where)
@@ -617,7 +619,9 @@ tern.command({
 	icon = "gauge",
 	run = function(cx)
 		fetch.kv_set("refresh_request", os.time() * 1000)
-		fetch.maybe_fetch("usage", true)
+		for _, src in fetch.sources() do
+			fetch.maybe_fetch(src, "usage", true)
+		end
 		local L = labels.get(settings_lib.load().language)
 		cx:toast("success", L.toast_refresh_ok)
 	end,

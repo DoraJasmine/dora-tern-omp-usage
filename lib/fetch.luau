@@ -256,7 +256,7 @@ local function interval_for(kind: string): number
 	return MODELS_INTERVAL
 end
 
-local function maybe_fetch(source: string, kind: string, force: boolean): boolean
+function M.maybe_fetch(source: string, kind: string, force: boolean): boolean
 	local now = now_ms()
 	local key = kind .. "@" .. source
 	local held = M.kv_get(key)
