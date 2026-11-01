@@ -9,19 +9,18 @@
 ## 1. 文件地图
 
 ```
-plugin.toml          清单:id=dora-tern-omp-usage、host/window 入口、两个 block 声明(dashboard/sync)
+plugin.toml          清单:id=dora-tern-omp-usage、host/window 入口、dashboard block 声明
 host.luau            宿主端(host half,守护进程线程):
                        ├ fetch.service() 循环(每 5s,lib/fetch)
-                       ├ sync 数据块(本机 kv → 一行 JSON 文本,5s 自刷新)
-                       └ dashboard 仪表盘块(omp usage --history + kv.days 费用)
+                       └ dashboard 仪表盘块(omp usage --history + 各源 days@ 费用)
 window.luau          窗口端(window half,每个窗口的 UI 线程):
                        ├ poll_loop 1s tick(焦点 pane → composer 树 → 画线)
                        ├ window_start / focus / budget 事件钩子
-                       ├ 多主机:host 映射、sync 块读取、自动开块+驻留(park)
+                       ├ 多主机:host 映射与数据源解析(pane→host→source)
                        ├ 状态栏段(chrome.status,读缓存不读 kv!)
                        └ 设置菜单(pick/prompt)、命令、诊断
 lib/parse.luau       纯函数,无 tern 调用(可单测):omp JSON → 内部模型
-lib/fetch.luau       进程取数器:usage/models/stats 三任务,串行队列 + kv 锁互斥
+lib/fetch.luau       取数器:数据源(local / wsl:<发行版> / ssh:<主机>)、按源串行队列与锁
 lib/line.luau        线与卡片的模型组装 + 全部 CSS 生成
 lib/settings.luau    设置读写(tern.kv)+ 调色板预设
 lib/labels.luau      en / zh-CN 文案(缺键回退 en)
@@ -42,7 +41,8 @@ docs/                需求 / 架构 / 实现 / API 说明
 | 新语言 | `lib/labels.luau` 加表 + `M.LANGUAGES` + `settings.luau` 的 language 校验 |
 | 窗口归一化/去重规则 | `lib/parse.luau` → `window_of` / `M.report` |
 | 多账号聚合 | `lib/line.luau` → `provider_windows` |
-| 仪表盘内容 | `host.luau` → `history_cards` / `cost_card` 相关 |
+| 新增数据源类型 | `lib/fetch.luau` → `argv_for` / `invalidate_argv` + `window.luau` 的 `source_for_host` |
+| 仪表盘内容 | `host.luau` → `history_cards` / `costs` |
 
 ## 2. 两条运行时
 
@@ -52,39 +52,41 @@ docs/                需求 / 架构 / 实现 / API 说明
 - **window_start** 每窗口触发一次,时机在会话落定(保存的标签页恢复完毕)之后,是首帧绘制的正确入口。
   注意 **reload 不会重新触发它**(joaodutra88 的注释也强调过),因此加载期定时器仍需保留。
 - 宿主端与窗口端通过 **tern.kv** 共享数据(同一数据目录下的 kv.json)。`tern.kv.set` 采用"临时文件 + rename"
-  原子写,并发写时后写者胜——因此取数环节设有 4 秒锁(`fetch_lock`)与串行队列(`busy`/`pending`)。
+  原子写,并发写时后写者胜——因此每个数据源都有独立的串行队列与锁(`fetch_lock@<源>`)。
 
 ## 3. 数据流水线
 
 ```
-宿主端(每台机器)                           窗口端(每个窗口)
-────────────────────                        ─────────────────────
-fetch.service(5s)                           tick(1s / focus / window_start / budget-resumed)
- ├ maybe_fetch("usage")                      ├ refresh_host_map:cx.hosts:list() → pane→主机
- │   omp usage --json → parse.usage          ├ refresh_sync_data(≤3s 一次):
- ├ maybe_fetch("models")                     │   对每个 info.block=="<id>.sync" 的 pane
- │   omp models --json → parse.catalog       │   cx.session:read(pane) → JSON → host_data[主机名]
- └ maybe_fetch("stats")                      ├ ensure_sync_block:当前主机是 remote 且无 sync 块
-     omp stats --json → parse.today          │   → cx:new_block(...,"tab",{focus=false}) → park
-         + by_provider 分解(差分累计)        ├ data_for(焦点pane):host_data[主机] 或本地 kv 兜底
- → kv: usage / models / today / days         ├ read_dock:composer 树 → 模型芯片名
-                                             ├ line.build → line.sheet → tern.css("usage-plus", css)
-数据源:"local" + "wsl:<distro>"(wsl.exe 穿透)+ "ssh:<host>"(ssh 直连)
-        每源独立 kv 键与串行队列;窗口按焦点窗格所属主机选用数据源      └ 状态栏(chrome.status,读 tick 缓存,不读 kv)
+宿主端(每台机器)                              窗口端(每个窗口)
+──────────────────────                          ─────────────────────
+fetch.service(5s)                               tick(1s / focus / window_start / budget-resumed)
+ ├ detect_wsl(10min):wsl.exe -l -q              ├ refresh_host_map:cx.hosts:list() → pane→主机
+ ├ maybe_fetch(local,"usage")                   ├ refresh_cache:各源 usage@/today@ 快照
+ │   omp usage --json → parse.usage             ├ data_for(焦点pane):host→source→数据
+ ├ maybe_fetch(local,"models")                  ├ read_dock:composer 树 → 模型芯片名
+ │   omp models --json → parse.catalog          └ line.build → line.sheet → tern.css
+ ├ maybe_fetch(local,"stats")
+ │   omp stats --json → 当日总量 + 按提供商账本
+ └ maybe_fetch("wsl:<发行版>" / "ssh:<主机>", …)
+     同样的三条命令,穿透到对应机器执行
+
+数据按键"kind@<source>"分源存储:usage@local、usage@wsl:Ubuntu-22.04、
+today@ssh:dora@wsl、days@local、days@wsl:…;窗口按焦点窗格所属主机选用。
 ```
 
 **kv 键一览**(数据目录:`%LOCALAPPDATA%\Tern\plugin-data\dora-tern-omp-usage\kv.json`,
-WSL 在 `~/.local/state/tern/plugin-data/...`):
+WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
 
-| 键 | 内容 | 写者 |
-|---|---|---|
-| `usage` | `{at, reports[], capacity}`(已归一、已去重) | fetch |
-| `models` | `{at, by_name, by_selector, by_provider}` | fetch |
-| `today` | `{at, tokens, cost, day, by_provider}` | fetch |
-| `days` | `{"YYYY-MM-DD": {tokens, cost}}`(62 天滚动,仪表盘用) | fetch |
-| `by_provider_today` / `by_model_snapshot` | 今日按提供商累计 / byModel 快照(跨零点差分用) | fetch |
-| `settings` | 全部设置(DEFAULTS 见 settings.luau) | settings 模块 |
-| `refresh_request` / `fetch_lock` / `trace` | 手动刷新请求 / 取数锁 / 最近 20 条取数事件 | fetch |
+| 键 | 内容 |
+|---|---|
+| `usage@<s>` / `models@<s>` | 各源限额报告(已归一、已去重)/ 模型目录 |
+| `today@<s>` | `{at, tokens, cost, day, by_provider}` 当日统计与按提供商分解 |
+| `days@<s>` | 各源逐日 `{tokens, cost}`(62 天滚动,仪表盘聚合用) |
+| `provider_days@<s>` / `by_model_prev@<s>` | 按提供商的当日账本 / byModel 累计基线(差分用) |
+| `wsl_distros` / `remote_hosts` | 检测到的 WSL 发行版 / 窗口上报的已连接远程主机 |
+| `fetch_lock@<s>` | 各源取数锁(4 秒窗口) |
+| `settings` | 全部设置(DEFAULTS 见 settings.luau) |
+| `refresh_request` / `trace` | 手动刷新请求 / 最近 20 条取数事件(带 source 标注) |
 
 ## 4. 渲染层(line.luau)
 
@@ -103,8 +105,7 @@ WSL 在 `~/.local/state/tern/plugin-data/...`):
 
 - 窗口 tick(1s):三次 kv 读 + `hosts:list` + composer 树(~40 节点)——与 jmazzola 同款节奏;
 - CSS 整表重写:数据变化或倒计时跳分时(约每分钟一次),单次 4~6KB 字符串拼接,可忽略;
-- sync 块只在载荷变化时出帧(载荷里没有任何随时间变化的字段),其余时间完全静默;
-- 窗口读块与块自刷新同为 5s 节拍;omp 进程 spawn 串行且受设置控制;
+- omp 进程 spawn 串行且受设置控制(usage 90s / stats 5min / models 10min,单次 0.3~0.6s);
 - 内存观测:诊断命令会报告窗口 VM 的 Lua 堆(`collectgarbage("count")`)与 kv.json 体积。
 
 ## 5. 经验与教训
@@ -122,14 +123,22 @@ WSL 在 `~/.local/state/tern/plugin-data/...`):
 7. **Kimi 的报告有重复窗口**:`limit_7d` 与 `7d` 数值存在舍入差,去重规则为
    "键以 `limit_` 开头,且与已知窗口的 resetAt 相差 2 分钟以内、用量相差 5 个百分点以内"。
 8. **capacity 的窗口名可能是标签**(如 `7 Day`)而非 id,解析时只接受白名单键。
-9. **多主机**:kv 不跨机器同步;远程数据依赖 sync 块(`cx.session:read` 可读远程块文本)。
-   插件 id 一旦改名,kv 数据目录随之改名,历史数据需手工迁移。
+9. **多主机**:kv 不跨机器同步。远程主机的数据由取数器按源穿透获取(WSL 走 wsl.exe,
+   ssh 主机走 ssh),源与数据的键都带来源前缀。插件 id 一旦改名,kv 数据目录随之改名,
+   历史数据需手工迁移。
+10. **改名/搬移函数后必须全仓 grep 旧名**。多轮脚本补丁叠加时,漏改一处调用就是运行时
+    "call a nil value";`tern plugin types` 可作语法门,但查不出 nil 引用。
+11. **Luau 没有位运算符**(`<<` 等会直接语法错误),且工具链多层转义容易把 `\n` 写成真实换行——
+    Lua 双引号字符串不允许跨行,生成代码时宁可不用转义。
 
 ## 6. 调试
 
-- **诊断命令**(命令面板):显示焦点主机、sync 块列表、三类数据的更新时间、芯片名与映射到的提供商。
-- **kv 直查**:路径见上;`trace` 键保留最近 20 条取数事件(spawned/callback/handler_error)。
-- **日志**:Windows 在 `%LOCALAPPDATA%\Tern\Logs\tern.log`;预算暂停会有 `tern: <hook> exceeded <n> ms`。
+- **诊断命令**(命令面板):显示焦点主机与数据源、各源的 usage/today 更新时间、芯片名与
+  映射到的提供商、窗口 VM 的 Lua 堆与 kv.json 体积。
+- **kv 直查**:路径见上;`trace` 键保留最近 20 条取数事件(spawned/callback/handler_error,
+  均带 source 标注)。
+- **日志**:Windows 在 `%LOCALAPPDATA%\Tern\Logs\tern.log`;预算暂停会有 `tern: <hook> exceeded <n> ms`,
+  样式表解析错误会有 `plugin style sheet has errors`(含每条被丢弃规则的行号与原因)。
 - **无头调试**(zh-cn 插件作者的方法):`tern serve --control /tmp/tern.sock` +
   `tern ctl --control /tmp/tern.sock tree` dump DOM,用于调整 CSS 选择器。
 
