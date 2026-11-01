@@ -1,13 +1,14 @@
--- Update check: a daily look at the GitHub Releases API, a ⬆ status segment when a newer
--- release exists, and a one-click reinstall (tern plugin install --force, after which the
--- daemon and windows hot-reload the new code). Pattern after joaodutra88/tern-omp-usage.
+-- Update check: a daily look at the releases atom feed (no GitHub API quota), a ⬆ status
+-- segment when a newer release exists, and a one-click reinstall (tern plugin install
+-- --force, after which the daemon and windows hot-reload the new code). Pattern after
+-- joaodutra88/tern-omp-usage.
 local M = {}
 
 M.VERSION = "1.2.1"
 local REPO_INSTALL = "github.com/DoraJasmine/dora-tern-omp-usage"
-local API = "https://api.github.com/repos/DoraJasmine/dora-tern-omp-usage/releases/latest"
+local FEED = "https://github.com/DoraJasmine/dora-tern-omp-usage/releases.atom"
 
-local latest: any = nil -- {version, url} when the API reports a newer release
+local latest: any = nil -- {version, url} when the feed reports a newer release
 
 local function parts(v: string): { number }
 	local out: { number } = {}
@@ -28,22 +29,19 @@ function M.newer(a: string, b: string): boolean
 	return false
 end
 
--- check(callback): queries the latest release once; callback(new_version_or_nil, cx)
+-- check(callback): queries the releases feed once; callback(new_version_or_nil, cx)
 -- fires when the answer arrives (new_version set only when it is newer than M.VERSION).
 function M.check(callback: (string?, any?) -> ())
 	local ok = pcall(function()
-		tern.fetch(API, nil, function(res: any, cx: any)
+		tern.fetch(FEED, nil, function(res: any, cx: any)
 			local newver: string? = nil
 			if res ~= nil and res.status == 200 and type(res.body) == "string" then
-				local ok2, doc = pcall(tern.json.decode, res.body :: string)
-				if ok2 and type(doc) == "table" then
-					local tag = tostring(doc.tag_name or "")
-					tag = string.match(tag, "^v?(.+)$") or tag
-					local url = tostring(doc.html_url or "")
-					if tag ~= "" and M.newer(tag, M.VERSION) then
-						latest = { version = tag, url = url }
-						newver = tag
-					end
+				-- The atom feed lists entries newest-first: the first releases/tag/vX.Y.Z
+				-- link carries the latest version. No GitHub API quota involved.
+				local ver = string.match(res.body :: string, "releases/tag/v([%d%.]+)")
+				if ver and M.newer(ver, M.VERSION) then
+					latest = { version = ver, url = "https://github.com/DoraJasmine/dora-tern-omp-usage/releases/tag/v" .. ver }
+					newver = ver
 				end
 			end
 			callback(newver, cx)
