@@ -101,6 +101,7 @@ local host_data: { [string]: any } = {} -- host key ("local" or name) → {usage
 local pane_host_map: { [number]: string } = {}
 local local_host_name: string = ""
 local last_sync_read = 0
+local sync_pane_ids: { number } = {}
 local last_ensure = 0
 
 local function refresh_host_map(cx: any)
@@ -146,8 +147,10 @@ local function refresh_sync_data(cx: any)
 	if not ok or type(panes) ~= "table" then
 		return
 	end
+	sync_pane_ids = {}
 	for _, info in panes do
 		if type(info) == "table" and info.block == SYNC_BLOCK then
+			table.insert(sync_pane_ids, info.pane)
 			local ok_read, answer = pcall(function()
 				return cx.session:read(info.pane, { max_chars = 8000 })
 			end)
@@ -258,6 +261,26 @@ local function data_for(pane: number?): (string, any, string)
 	}, label
 end
 
+-- The parked sync block shows up as a card in Tern 0.9.9's deck strip. Its pane id is
+-- known here, so the card can be hidden with documented anchors: the element carrying
+-- [data-pane], its contents, and (when the engine supports :has()) its containers.
+local function deck_hide_css(): string
+	local rules: { string } = {}
+	for _, id in sync_pane_ids do
+		local sel = string.format("[data-pane='%d']", id)
+		table.insert(rules, sel .. ", " .. sel .. " * { display: none !important; }")
+		table.insert(rules, string.format(".tn-dk-c:has([data-pane='%d']) { display: none !important; }", id))
+		table.insert(rules, string.format("*:has(> [data-pane='%d']) { display: none !important; }", id))
+	end
+	if #rules == 0 then
+		return ""
+	end
+	return "
+/* dora-tern-omp-usage: hide the parked sync block card */
+" .. table.concat(rules, "
+")
+end
+
 -- ── rendering ───────────────────────────────────────────────────────────────
 
 local last_css: string? = nil
@@ -342,7 +365,7 @@ local function tick(cx: any?)
 		focused_agent = ok and type(info) == "table" and info.kind == "agent"
 	end
 	if not focused_agent then
-		install("")
+		install(deck_hide_css())
 		return
 	end
 
@@ -358,7 +381,7 @@ local function tick(cx: any?)
 		chip = chip,
 	}, now)
 	if #model.groups == 0 then
-		install("")
+		install(deck_hide_css())
 		return
 	end
 	-- redraw the status bar when the shown host's data changed
@@ -367,7 +390,7 @@ local function tick(cx: any?)
 		cached.host_sig = host_sig
 		tern.chrome.refresh()
 	end
-	install(line.sheet(settings, model, L, today_text(settings, host_label, data.today), data.today, now))
+	install(line.sheet(settings, model, L, today_text(settings, host_label, data.today), data.today, now) .. deck_hide_css())
 end
 
 local function poll_loop(cx: any?)
