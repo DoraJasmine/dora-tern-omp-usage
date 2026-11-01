@@ -6,6 +6,7 @@ local labels = require("./lib/labels")
 local settings_lib = require("./lib/settings")
 local line = require("./lib/line")
 local fetch = require("./lib/fetch")
+local update = require("./lib/update")
 
 local SHEET = "usage-plus"
 -- Module state, declared early so every function below shares one scope.
@@ -318,11 +319,40 @@ tern.on("budget", function(ev: any, cx: any)
 	end
 end)
 
+-- Update check: once a day (first pass a minute after load). A newer release toasts once
+-- per version and shows the ↗ segment until the plugin is updated.
+local function check_updates(cx: any?)
+	update.check(function(newver: string?, ucx: any?)
+		if newver == nil then
+			return
+		end
+		local seen = fetch.kv_get("update_seen")
+		if seen == newver then
+			return
+		end
+		fetch.kv_set("update_seen", newver)
+		local target = if ucx then ucx else cx
+		if target then
+			local settings = settings_lib.load()
+			local L = labels.get(settings.language)
+			target:toast("info", string.format(L.update_available, newver))
+		end
+		tern.chrome.refresh()
+	end, cx)
+end
+
+local function update_loop(cx: any?)
+	tern.timer(86400000, update_loop)
+	check_updates(cx)
+end
+
 -- The watchdog: if the daemon half is not running its loop (no daemon, or the plugin half off), this window
 -- still keeps the data fresh; the kv locks keep the two halves from doubling a fetch.
 local function watchdog_loop()
 	fetch.service()
 	tern.timer(WATCHDOG_MS, watchdog_loop)
+
+tern.timer(60000, update_loop)
 end
 
 tern.timer(WATCHDOG_MS, watchdog_loop)
@@ -340,6 +370,10 @@ tern.chrome.status(function(pane: any): { any }?
 	local shown_usage = if type(by) == "table" and type(by.usage) == "table" then by.usage else nil
 	local today = if type(by) == "table" and type(by.today) == "table" then by.today else nil
 	local out: { any } = {}
+	local up = update.get_latest()
+	if type(up) == "table" then
+		table.insert(out, { text = "↗ " .. tostring(up.version or ""), command = PLUGIN .. "update" })
+	end
 	-- First, so a narrow window that clips the end of the status line still shows it.
 	if type(shown_usage) == "table" and type(shown_usage.at) == "number" and os.time() * 1000 - shown_usage.at > STALE_MS then
 		table.insert(out, { text = "⚠", tone = "error", command = PLUGIN .. "diagnostics" })
@@ -624,6 +658,23 @@ tern.command({
 		end
 		local L = labels.get(settings_lib.load().language)
 		cx:toast("success", L.toast_refresh_ok)
+	end,
+})
+
+tern.command({
+	id = "update",
+	title = "Dora omp Usage: Update to the latest release",
+	icon = "download",
+	run = function(cx)
+		update.install(function(ok: boolean, msg: string)
+			local up = update.get_latest()
+			local L = labels.get(settings_lib.load().language)
+			cx:toast(if ok then "success" else "error",
+				if ok then string.format(L.update_ok, (type(up) == "table" and up.version) or "?") else string.format(L.update_fail, msg))
+			if ok then
+				tern.chrome.refresh()
+			end
+		end)
 	end,
 })
 
