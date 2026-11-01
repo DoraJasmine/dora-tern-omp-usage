@@ -370,7 +370,6 @@ tern.chrome.status(function(pane: any): { any }?
 	local shown_usage = if type(by) == "table" and type(by.usage) == "table" then by.usage else nil
 	local today = if type(by) == "table" and type(by.today) == "table" then by.today else nil
 	local out: { any } = {}
-	table.insert(out, { text = "🧪 TEST", tone = "error", command = PLUGIN .. "diagnostics" })
 	local up = update.get_latest()
 	if type(up) == "table" then
 		table.insert(out, 1, { text = "↗ Update v" .. tostring(up.version or ""), tone = "accent", command = PLUGIN .. "update" })
