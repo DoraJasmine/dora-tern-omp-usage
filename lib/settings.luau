@@ -14,6 +14,7 @@ local DEFAULTS = {
 	show_tokens = true,
 	show_cost = true,
 	alerts = true, -- stored and user-facing; the toasts themselves are a planned follow-up
+	update_check = true, -- daily GitHub releases probe + the ⬆ segment
 
 	language = "en",
 }
