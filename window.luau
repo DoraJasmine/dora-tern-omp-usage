@@ -159,23 +159,28 @@ end
 local function providers_present(): { string }
 	local present: { string } = {}
 	local seen: { [string]: boolean } = {}
-	local usage = fetch.kv_get("usage")
-	if type(usage) == "table" and type(usage.reports) == "table" then
-		for _, report in usage.reports do
-			if type(report.provider) == "string" and not seen[report.provider] then
-				seen[report.provider] = true
-				table.insert(present, report.provider)
+	local function collect(usage: any)
+		if type(usage) == "table" and type(usage.reports) == "table" then
+			for _, report in usage.reports do
+				if type(report.provider) == "string" and not seen[report.provider] then
+					seen[report.provider] = true
+					table.insert(present, report.provider)
+				end
+			end
+		end
+		if type(usage) == "table" and type(usage.capacity) == "table" then
+			for provider in usage.capacity do
+				if not seen[provider] then
+					seen[provider] = true
+					table.insert(present, provider)
+				end
 			end
 		end
 	end
-	if type(usage) == "table" and type(usage.capacity) == "table" then
-		for provider in usage.capacity do
-			if not seen[provider] then
-				seen[provider] = true
-				table.insert(present, provider)
-			end
-		end
+	for _, source in fetch.sources() do
+		collect(fetch.kv_get("usage@" .. source))
 	end
+	collect(fetch.kv_get("usage")) -- legacy flat key
 	return present
 end
 
@@ -286,10 +291,6 @@ tern.chrome.status(function(pane: any): { any }?
 	local shown_usage = if type(by) == "table" and type(by.usage) == "table" then by.usage else nil
 	local today = if type(by) == "table" and type(by.today) == "table" then by.today else nil
 	local out: { any } = {}
-	-- First, so a narrow window that clips the end of the status line still shows it.
-	if type(shown_usage) == "table" and type(shown_usage.at) == "number" and os.time() * 1000 - shown_usage.at > STALE_MS then
-		table.insert(out, { text = "⚠", tone = "error", command = PLUGIN .. "diagnostics" })
-	end	local out: { any } = {}
 	-- First, so a narrow window that clips the end of the status line still shows it.
 	if type(shown_usage) == "table" and type(shown_usage.at) == "number" and os.time() * 1000 - shown_usage.at > STALE_MS then
 		table.insert(out, { text = "⚠", tone = "error", command = PLUGIN .. "diagnostics" })
@@ -619,11 +620,11 @@ tern.command({
 		local kv_ok, kv_text = pcall(tern.fs.read, tern.plugin.data .. "/kv.json", 1048576)
 		table.insert(parts, string.format("lua heap %s · kv.json %s",
 			if mem_ok and type(mem_kb) == "number" then string.format("%.0f KB", mem_kb) else "n/a",
-			if kv_ok and type(kv_text) == "string" then string.format("%.1f KB", #kv_text / 1024) else "n/a")))
+			if kv_ok and type(kv_text) == "string" then string.format("%.1f KB", #kv_text / 1024) else "n/a"))
 		local detail = table.concat(parts, " · ")
 		local usage = fetch.kv_get("usage@" .. source)
 		local stale = type(usage) == "table" and type(usage.at) == "number" and now - usage.at > STALE_MS
-		local stale = type(usage) == "table"		local stale = type(usage) == "table" and type(usage.at) == "number" and now - usage.at > STALE_MS
+			local stale = type(usage) == "table" and type(usage.at) == "number" and now - usage.at > STALE_MS
 		cx:toast(if stale then "error" else "info", L.menu_title, detail .. (if stale then " · " .. L.toast_stale else ""))
 	end,
 })
