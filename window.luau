@@ -91,6 +91,7 @@ end
 
 local pane_host_map: { [number]: string } = {}
 local local_host_name: string = ""
+local last_chip: string? = nil
 
 -- Builds the pane -> host map from the window's host list, reports the connected
 -- remote hosts to kv (the host-side fetch service cannot see Tern's host list),
@@ -259,6 +260,15 @@ local function tick(cx: any?)
 
 	local chip, _viewing = read_dock(cx, pane :: number)
 	local host_key, data, host_label = data_for(pane :: number)
+	-- A model switch redraws at once from the cached reports, then fetches fresh ones
+	-- for the focused source (jmazzola's "redraw, then fetch" pattern).
+	if chip ~= nil and chip ~= last_chip then
+		last_chip = chip
+		local src = source_for_host(host_key, cached.wsl_list, cached.remote_list)
+		if src ~= "?" then
+			fetch.maybe_fetch(src, "usage", true)
+		end
+	end
 	local usage = data.usage
 	local models = data.models
 	local model = line.build(settings, {

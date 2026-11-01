@@ -205,44 +205,41 @@ local function handle(source: string, kind: string, doc: any)
 		local midnight = os.time({ year = t.year, month = t.month, day = t.day, hour = 0, min = 0, sec = 0 }) * 1000
 		local tokens, cost = parse.today(doc, midnight)
 		local day = os.date("%Y-%m-%d") :: string
-		-- Per-provider today: byModel is cumulative over the stats window. When the window
-		-- starts inside today, its totals ARE today's; when it spans midnight, per-day
-		-- snapshot deltas accumulate (a pruned DB resets to zero).
-		local snap_key = "by_model_snapshot@" .. source
-		local acc_key = "by_provider_today@" .. source
-		local acc = M.kv_get(acc_key)
-		if type(acc) ~= "table" or acc.day ~= day or type(acc.providers) ~= "table" then
-			acc = { day = day, providers = {} }
-		end
-		local overall = type(doc.overall) == "table" and doc.overall or {}
-		local first = overall.firstTimestamp
-		local spans_midnight = type(first) == "number" and first < midnight
-		local totals = parse.by_model_totals(doc)
-		if not spans_midnight then
-			acc.providers = totals
-		else
-			local snap = M.kv_get(snap_key)
-			if type(snap) == "table" and snap.day == day and type(snap.providers) == "table" then
-				for p, v in totals do
-					local prev = snap.providers[p]
-					local held = acc.providers[p] or { tokens = 0, cost = 0 }
-					if type(prev) == "table" then
-						local delta = v.tokens - (prev.tokens or 0)
-						if delta > 0 then
-							held.tokens += delta
-						end
-						delta = v.cost - (prev.cost or 0)
-						if delta > 0 then
-							held.cost += delta
-						end
+		-- Per-provider today: byModel is cumulative over the stats window, so deltas
+		-- against the last seen cumulative land in a per-day ledger. The ledger survives
+		-- midnight (new day key) and DB rolls (negative deltas clamp to zero).
+		local cum = parse.by_model_totals(doc)
+		local prev_key = "by_model_prev@" .. source
+		local ledger_key = "provider_days@" .. source
+		local prev = M.kv_get(prev_key)
+		local ledger = M.kv_get(ledger_key)
+		ledger = if type(ledger) == "table" then ledger else {}
+		local today_providers = if type(ledger[day]) == "table" then ledger[day] else {}
+		if type(prev) == "table" then
+			for p, v in cum do
+				local pr = prev[p]
+				if type(pr) == "table" then
+					local dt = v.tokens - (pr.tokens or 0)
+					local dc = v.cost - (pr.cost or 0)
+					if dt > 0 or dc > 0 then
+						local slot = today_providers[p] or { tokens = 0, cost = 0 }
+						slot.tokens += math.max(0, dt)
+						slot.cost += math.max(0, dc)
+						today_providers[p] = slot
 					end
-					acc.providers[p] = held
 				end
 			end
-			M.kv_set(snap_key, { day = day, providers = totals })
 		end
-		M.kv_set(acc_key, acc)
-		store(source, "today", { at = now_ms(), tokens = tokens, cost = cost, day = day, by_provider = acc.providers })
+		ledger[day] = today_providers
+		local oldest = os.date("%Y-%m-%d", os.time() - 62 * 86400) :: string
+		for k in ledger do
+			if k < oldest then
+				ledger[k] = nil
+			end
+		end
+		M.kv_set(prev_key, cum)
+		M.kv_set(ledger_key, ledger)
+		store(source, "today", { at = now_ms(), tokens = tokens, cost = cost, day = day, by_provider = today_providers })
 		record_day(source, tokens, cost)
 	end
 end
