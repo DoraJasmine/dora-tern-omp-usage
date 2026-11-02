@@ -49,6 +49,15 @@ Or paste the same address into Tern's **Preferences › Plugins › Install…**
   input, output, cache reads and cache writes. The dollar amounts are therefore the **API-equivalent cost** of
   your usage — what it would have cost at API rates — not your subscription bill.
 
+### How fresh the limits are
+
+Limit numbers are not real-time: omp keeps a ~**5-minute** (±25% jitter) local cache of upstream usage reports
+and answers repeat queries from it. The TTL is hardcoded in omp with no configuration surface, so polling more
+often cannot buy fresher data. Worst-case staleness is roughly cache TTL plus this plugin's refresh interval
+(default 90 s, adjustable in settings). The plugin's **Refresh now** command calls omp's official
+`omp usage invalidate`, which bypasses the cache and is the fastest way to get up-to-date limits.
+See [the architecture document](docs/ARCHITECTURE.md) §16 for details.
+
 ## Multi-host
 
 Tern windows show panes from every connected host, and a plugin's window half runs on the window's machine.

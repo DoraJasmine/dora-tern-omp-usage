@@ -318,4 +318,42 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 | `cx.session:surface(pane,{root}) / :panes() / :focused() / :pane(n)` | 读窗格 UI 树/信息 | jmazzola |
 | `cx.canvas:open/set/list` + `tern.on("canvas_action")` | canvas 设置面板 | jmazzola |
 | `cx:pick / cx:prompt / cx:toast / cx:new_block / cx.layout:focus` | 交互原语 | 两者 |
+
+## 16. 数据新鲜度:插件与 omp 的双层更新机制
+
+本节记录插件的取数机制与 omp(`oh-my-pi`,下称"omp")自身的数据更新机制如何衔接,以及由此推导出的间隔取值依据。依据为 2026-11-02 对 omp 18.14.x 源码([packages/ai/src/usage/claude.ts](https://github.com/can1357/oh-my-pi/blob/main/packages/ai/src/usage/claude.ts)、[packages/coding-agent/src/cli/usage-cli.ts](https://github.com/can1357/oh-my-pi/blob/main/packages/coding-agent/src/cli/usage-cli.ts))与本机 `agent.db` 缓存的实测。
+
+### 16.1 omp 侧:按需取数 + 本地缓存,无主动推送
+
+omp 的额度数据不按固定周期刷新,而是"被请求时取数"的拉模型,包含三层:
+
+1. **上游请求层**:omp 收到用量查询(会话内 TUI 状态行、`/usage`、`omp usage` CLI)时,才向各提供商的限额端点发起请求。取回的报告附带 `fetchedAt`(epoch ms,即数据生成时刻),并写入 `agent.db` 的 `usage_cache:report:<provider>:…` 缓存行。
+2. **缓存层**:缓存报告带约 **5 分钟** 的 TTL(实测 kimi-code 296 s、openai-codex 325 s)。TTL 未过期时,再次查询直接返回缓存报告,不打上游。取数失败时,上一次成功报告按"最后良好值"策略继续供数,最长保留 **24 小时**;针对 Claude 等按 IP 限流的端点,失败后退避 **60 秒** 起步,避免加剧 429。
+3. **自取层**:运行中的 omp 会话以约 **每小时一次** 的节奏自行刷新用量并追加历史快照(`usage_history` 表,即 `omp usage --history` 的数据来源;实测相邻快照间隔 3349–3540 s)。
+
+因此 omp 报告的"数据生成时刻"以报告内 `fetchedAt` 字段为准,与查询发生的时刻解耦。
+
+### 16.2 插件侧:间隔轮询 + 强制失效
+
+插件(`lib/fetch.luau`)对每数据源按各自间隔轮询 omp CLI,间隔为数据年龄阈值(usage 默认 90 s、可设 60–600 s;stats 默认 300 s、可设 60–3600 s;models 固定 600 s),轮询节拍为 host 半每 5 s 检查一次到期。轮询间共享 kv 锁,host 半与 window 半的 watchdog 不重复取数。手动刷新与模型切换触发 `omp usage invalidate` 后立即取数,以绕过 omp 的 5 分钟缓存。
+
+### 16.3 两层机制的衔接与推论
+
+两层机制是"插件调度、omp 执行"的关系:插件决定询问频率,omp 决定上游访问频率。由此有三点推论:
+
+1. **插件的 usage 间隔是"询问间隔",不是"数据新鲜度上限"。** 若询问时 omp 缓存未过期,返回的是缓存中的旧报告;插件 kv 中的 `at` 记录的是取回时刻而非数据生成时刻,故陈旧判定存在乐观偏差。缩短间隔短于 omp 缓存 TTL(~5 min)对新鲜度无增益。
+2. **90 s 的默认间隔已接近有效下限。** 相对 omp 的 5 分钟缓存 TTL,90 s 保证缓存过期后约一个周期内即被插件捞起,且给手动 invalidate 留出空间;压至 60 s 仅在缓存恰好过期的窗口内略微提前,同时增加进程开销与上游限流风险(omp 自身在 429 后退避 ≥60 s)。官方第三方扩展(pi-usage-limit-tracker)采用 5 分钟轮询,可作佐证。
+3. **stats 无上游限流问题。** `omp stats --json` 读本地统计库,300 s 默认间隔纯属开销权衡,可安全调低。
+
+### 16.4 缓存 TTL 不可配置,唯一接口为 `omp usage invalidate`
+
+omp 的额度缓存 TTL 为硬编码常量 `USAGE_REPORT_TTL_MS = 5 * 60_000`(`packages/ai/src/auth/sqlite-credential-store.ts`),写入时叠加 ±25% 随机抖动(实际 3.75–6.25 分钟),以错开多账号同时刷新、避免按 IP 限流的端点周期性 429。经查证,该值**不提供任何配置入口**:环境变量参考、YAML 设置家族与 CLI flag 中均无对应项;官方文档中唯一名字相近的 `OMP_AUTH_BROKER_SNAPSHOT_TTL_MS` 管的是凭据快照,与额度缓存无关。
+
+唯一受支持的强制刷新接口是 `omp usage invalidate`(CLI 子命令)。其实现(`packages/ai/src/auth/usage-cache.ts`)并非立即向上游取数,而是写入一个 5 分钟有效(`USAGE_FORCE_REFRESH_TTL_MS`)的强制刷新标记,在随后的取数轮次中让对应 provider 跳过缓存直接请求上游,并串行化同 provider 的探测以避免冷账号突发。本插件的手动刷新与模型切换路径已正确使用该接口。
+
+由此确定:额度数据的新鲜度下限约为"缓存 TTL(5±1.25 min)+ 插件轮询周期",为 omp 的设计决策,插件侧无法绕过(除直接读其 SQLite 缓存外,不取)。插件的最优策略即现状——90 s 间隔轮询、敏感操作前 invalidate;若需更实时的额度,应向 omp 上游提议增加缓存 TTL 配置项。
+
+### 16.5 待办:以 `fetchedAt` 校正陈旧判定
+
+omp 输出的每份报告携带 `fetchedAt`。插件解析时若优先采用该字段(缺失时回退本地时间),kv `at` 即反映数据的真实生成时刻,陈旧标记与 16.3.1 的乐观偏差随之消除。已列入待办。
 | `tern.block.define(id, {init,title,view,key})` | host block(仪表盘) | joaodutra88 |
