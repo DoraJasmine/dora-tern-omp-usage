@@ -413,6 +413,30 @@ local function after_change(cx: any)
 	end
 end
 
+-- Prompt for a seconds interval (a settings number key), clamped by `lo`–`hi` like settings.load does.
+local function open_interval(cx: any, key: string, lo: number, hi: number)
+	local settings = settings_lib.load()
+	local L = labels.get(settings.language)
+	cx:prompt({
+		value = tostring(settings[key]),
+		placeholder = if key == "usage_interval" then L.prompt_interval else L.prompt_stats_interval,
+		icon = "gauge",
+	}):next(function(text: string?, _err: string?, next_cx: any?)
+		if text == nil or not string.find(text :: string, "%S") then
+			return
+		end
+		local n = tonumber(text :: string)
+		if n == nil or math.floor(n) ~= n or n < lo or n > hi then
+			(next_cx or cx):toast("error", if key == "usage_interval" then L.toast_interval_bad else L.toast_stats_interval_bad)
+			return
+		end
+		settings_lib.set({ [key] = math.floor(n) })
+		local target = next_cx or cx
+		target:toast("success", L.toast_saved)
+		after_change(target)
+	end)
+end
+
 local function open_chooser(cx: any)
 	local settings = settings_lib.load()
 	local L = labels.get(settings.language)
@@ -570,6 +594,8 @@ local function open_menu(cx: any)
 		{ label = L.menu_colors, group = "Providers", pick = "colors" },
 		{ label = L.menu_refresh, pick = "refresh" },
 		{ label = L.menu_dashboard, pick = "dashboard" },
+		{ label = L.menu_usage_interval, detail = settings.usage_interval .. "s", pick = "usage_interval" },
+		{ label = L.menu_stats_interval, detail = settings.stats_interval .. "s", pick = "stats_interval" },
 		{ label = if settings.language == "en" then L.menu_language else L.menu_language_en, pick = "language" },
 		{ label = (if settings.show_tokens then "✓ " else "") .. "🔥 " .. L.tokens, group = "Status bar", pick = "tokens" },
 		{ label = (if settings.show_cost then "✓ " else "") .. "💰", group = "Status bar", pick = "cost" },
@@ -599,6 +625,10 @@ local function open_menu(cx: any)
 			where:toast("success", L.toast_refresh_ok)
 		elseif item.pick == "dashboard" then
 			open_dashboard_or_nil(where)
+		elseif item.pick == "usage_interval" then
+			open_interval(where, "usage_interval", 60, 600)
+		elseif item.pick == "stats_interval" then
+			open_interval(where, "stats_interval", 60, 3600)
 		elseif item.pick == "language" then
 			settings_lib.set({ language = if settings.language == "en" then "zh-CN" else "en" })
 			after_change(where)
@@ -739,7 +769,6 @@ tern.command({
 		local detail = table.concat(parts, " · ")
 		local usage = fetch.kv_get("usage@" .. source)
 		local stale = type(usage) == "table" and type(usage.at) == "number" and now - usage.at > STALE_MS
-			local stale = type(usage) == "table" and type(usage.at) == "number" and now - usage.at > STALE_MS
 		cx:toast(if stale then "error" else "info", L.menu_title, detail .. (if stale then " · " .. L.toast_stale else ""))
 	end,
 })

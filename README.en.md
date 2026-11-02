@@ -36,8 +36,8 @@ Or paste the same address into Tern's **Preferences › Plugins › Install…**
 - **Status bar**: 🔥 today's tokens and 💸 today's API-price cost for the focused pane's host.
 - **Dashboard**: 7 days of usage history plus today/week/month API-price cost (`r` refreshes).
 - **Settings** (`Ctrl+Alt+U`, the status-bar `usage` segment, or the palette): show mode (current model /
-  all providers / selected), provider order, per-provider colors, thresholds, refresh intervals, status-bar
-  toggles, language (English / 简体中文).
+  all providers / selected), provider order, per-provider colors, thresholds, usage and today-stats refresh
+  intervals, status-bar toggles, language (English / 简体中文).
 
 ## How the numbers are computed
 
