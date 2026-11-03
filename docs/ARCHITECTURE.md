@@ -199,6 +199,7 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 - scope 限定:`scope.shared==true` 或无 `tier/modelId` → 套餐级;否则仅当当前模型 bare id 命中(`id 含 modelId 且含 tier`)时保留;若该提供商所有已知模型都不命中任何 scope → 全部视为套餐级(与 jmazzola `limitApplies` 一致)。
 - capacity(provider 级,跨账号):窗口 = `usedAccounts/accounts`,与该提供商 limits 合并(captity 优先展示)。
 - 排序:ms 升序,inf 在最后;同 key 取第一个。
+- **无限额提供商降级**:按量计费的服务没有 `limits[]`,因此既不在 `reports` 里也不在 `capacity` 里,唯一留痕是 `today@<s>.by_provider`。`line.build` 会为这类提供商补一个"只有当日消耗"的组(`windows={}`、`credits=0`、`spend={tokens,cost}`,Step 5 的 `add_group` 兜底),线上渲染为 `Bailian  TODAY 18.5M · $0.35`,不带计量条;同一 provider id 若同时有窗口则窗口优先,不会重复成组。`providers_present()` 也把它们计入,以便出现在服务开关与排序里。
 
 ### 6.2 tern.kv schema(唯一持久层)
 
@@ -206,7 +207,7 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 |---|---|---|---|
 | `usage` | `{ at, ok, reports: Report[](已归一), err? }` | poller | window 全部 |
 | `models` | `{ at, byName: {name→provider}, byId: {id→provider}, prefix: {prefix→provider} }` | poller | watcher |
-| `today` | `{ at, tokens, cost, day: "YYYY-MM-DD" }` | poller | window/statusbar |
+| `today` | `{ at, tokens, cost, day: "YYYY-MM-DD", by_provider: {id → {tokens, cost}} }` | poller | window/statusbar |
 | `days` | `{ ["YYYY-MM-DD"]: {tokens, cost} }`(62 天滚动) | poller | dashboard |
 | `settings` | `{ mode, selected[], order[], colors{key→spec}, warnAt, badAt, usageInterval, statsInterval, showTokens, showCost, alerts, language }` | settings 模块 | window 全部 |
 
@@ -217,6 +218,7 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 沿用并简化 jmazzola 的 CSS 方案(无状态栏事实隐藏,少一半复杂度):
 
 - **布局**:线为 meter `::before`,13px 高、单行 mono;`<label> <bar> <pct>% <reset>` 以 NBSP 连接,窗口间用 `·`;放不下整项 NBSP 换行到裁剪的第二行(FR-1.6)。
+- **无窗口组**:不画条与百分比,只有 `label · TODAY <tokens> · $<cost>`(纯 ASCII、`compact_number` 缩写);卡片里写全「今日 N tokens · $X」。分组间仍用 `·` 连接。
 - **条形**:`━`×8(紧凑 6),`background-clip:text` 一层渐变按字符区间着色:已填部分 = 提供商色、未填 = 15% 透明提供商色;`::after` 为亮端 tip(radial 渐变)。
 - **配色**:每提供商 `{label, bar1, bar2?}`;预设:Claude clay `#d97757`、Codex graphite→blue、OpenAI green、**Kimi green**、Gemini blue→white、MiniMax red→pink、Qwen purple…,未知提供商 = theme accent;自定义 spec=`#hex` 或 `#hex, #hex`;≤25% 全线该窗口变 amber、≤10% 变 red(独立于提供商色)。
 - **comet**:窗口 left 值变化 → 该窗口区间以 `image()` 层做 1.4s 位移动画(降=提供商色,升=--ok 绿);Reduce Motion(Tern 或系统)时输出 STILL 版本,无任何动画。

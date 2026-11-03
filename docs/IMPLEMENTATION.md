@@ -41,6 +41,7 @@ docs/                需求 / 架构 / 实现 / API 说明
 | 新语言 | `lib/labels.luau` 加表 + `M.LANGUAGES` + `settings.luau` 的 language 校验 |
 | 窗口归一化/去重规则 | `lib/parse.luau` → `window_of` / `M.report` |
 | 多账号聚合 | `lib/line.luau` → `provider_windows` |
+| 按量计费(无窗口)服务的显示 | `lib/line.luau` → `M.build` 的 `spend_of` / `add_group` 兜底 + `line_of` 的 spend 段;`window.luau` → `providers_present` |
 | 新增数据源类型 | `lib/fetch.luau` → `argv_for` / `invalidate_argv` + `window.luau` 的 `source_for_host` |
 | 仪表盘内容 | `host.luau` → `history_cards` / `costs` |
 
@@ -96,6 +97,8 @@ WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
   等宽字符的两倍,会破坏填充与动效的对齐;中文仅出现在卡片里。
 - 悬停目标是 composer 的空附件行(`omp.composer.chips`,平时隐藏);卡片是其 `::after`,
   默认 `visibility: hidden` 并带 0.5 秒过渡延迟,鼠标移开后短暂停留仍可悬停,不会一闪而过。
+- 没有额度窗口的按量计费服务(只存在于 `today@<s>.by_provider`)由 `M.build` 补成 `spend` 组:线上一段
+  `TODAY 18.5M · $0.35`(纯 ASCII),卡片一行中文全写;该类组同时参与签名,数字变化才重写 CSS。
 - 全部 CSS 在内容签名变化时整表重写(`tern.css("usage-plus", css)`),无状态残留;级联中的
   表名为 `plugin:local:dora-tern-omp-usage:usage-plus`。
 - **锚点选择器集中在 line.luau 顶部**(`METER`/`HOST_BASE`)。Tern 升级后若线条消失,先用诊断命令

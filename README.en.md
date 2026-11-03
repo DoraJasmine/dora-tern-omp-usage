@@ -26,6 +26,9 @@ Or paste the same address into Tern's **Preferences › Plugins › Install…**
 
 - **Usage line** above the focused omp pane's context hairline: per-window bars filled to the share left, with
   reset countdowns and saved resets, in each provider's colors (amber at 25% left, red at 10%).
+- **Pay-as-you-go providers**: a provider with no subscription window never shows up in the usage report, so it
+  falls back to today's spend — `Bailian  TODAY 24.6M · $0.43`, no bar — and still appears in the card, the
+  provider toggles and the ordering menu.
 - **Hover card** with per-window meters, reset times and clock times, saved-reset expiries, today's totals and
   settings shortcut. It stays open while you point at it.
 - **Model follow**: switches to the focused agent's provider within ~2 s of a model switch (Alt+P), and shows a
@@ -45,6 +48,8 @@ Or paste the same address into Tern's **Preferences › Plugins › Install…**
   appear with zero code changes.
 - **Today** sums `omp stats --json` hourly buckets since local midnight. The per-provider breakdown aggregates
   `byModel` (input + output + cache tokens, the same semantics as the total).
+- **Pay-as-you-go providers** have no limit window at all, so the only trace they leave is that per-provider
+  breakdown; the line shows that spend instead of a bar.
 - **Prices** come from omp's model catalog (`omp models --json`): the API list price per million tokens for
   input, output, cache reads and cache writes. The dollar amounts are therefore the **API-equivalent cost** of
   your usage — what it would have cost at API rates — not your subscription bill.
