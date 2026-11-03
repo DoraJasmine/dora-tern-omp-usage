@@ -4,7 +4,17 @@
 -- joaodutra88/tern-omp-usage.
 local M = {}
 
-M.VERSION = "1.3.1"
+-- The manifest is the release version's one source; this used to be a hand-kept copy that
+-- drifted from plugin.toml twice.
+local function manifest_version(): string?
+	local ok, text = pcall(tern.fs.read, tern.plugin.dir .. "/plugin.toml", 65536)
+	if not ok or type(text) ~= "string" then
+		return nil
+	end
+	return string.match(text, "version%s*=%s*\"([^\"]+)\"")
+end
+
+M.VERSION = manifest_version() or "1.3.3"
 local REPO_INSTALL = "github.com/DoraJasmine/dora-tern-omp-usage"
 local FEED = "https://github.com/DoraJasmine/dora-tern-omp-usage/releases.atom"
 

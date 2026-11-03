@@ -16,6 +16,7 @@ local en = {
 	settings_hint = "settings · Ctrl+Alt+U",
 	today_line = "today on %s  %s tokens · $%.2f",
 	today_unavailable = "today on %s · data unavailable",
+	spend_today = "today  %s tokens · $%.2f",
 	window_word = "%s window",
 	-- menu
 	menu_title = "Dora omp Usage",
@@ -85,6 +86,7 @@ local zh = {
 	settings_hint = "设置 · Ctrl+Alt+U",
 	today_line = "%s 今日 %s tokens · $%.2f",
 	today_unavailable = "%s 今日 · 数据不可用",
+	spend_today = "今日  %s tokens · $%.2f",
 	window_word = "%s 窗口",
 	menu_title = "Dora omp Usage",
 	menu_panel = "设置…",

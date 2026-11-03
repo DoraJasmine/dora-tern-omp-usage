@@ -211,7 +211,7 @@ local function provider_windows(data: any, provider: string, bare: string, plan_
 				local held = worst[window.key]
 				if held == nil or window.left < held.left then
 					worst[window.key] = window
-				elseif held and window.reset_at and (held.reset_at == nil or window.reset_at < window.reset_at) then
+				elseif held and window.reset_at and (held.reset_at == nil or window.reset_at < held.reset_at) then
 					held.reset_at = window.reset_at
 				end
 			end
@@ -298,10 +298,46 @@ function M.build(settings: any, data: any, now: number): any
 			table.insert(present, provider_id)
 		end
 	end
+	-- A pay-as-you-go provider has no quota windows, so omp reports none for it and it never reaches the
+	-- line. Today's per-provider ledger is the only trace it leaves, so a provider seen there gets a
+	-- spend-only group instead of dropping out.
+	local today_by = if type(data.today) == "table" and type(data.today.by_provider) == "table" then data.today.by_provider else nil
+	local function spend_of(provider_id: string): any
+		local entry = today_by and today_by[provider_id]
+		if type(entry) ~= "table" then
+			return nil
+		end
+		local tokens = if type(entry.tokens) == "number" then entry.tokens else 0
+		local cost = if type(entry.cost) == "number" then entry.cost else 0
+		if tokens <= 0 and cost <= 0 then
+			return nil
+		end
+		return { tokens = tokens, cost = cost }
+	end
+	if today_by then
+		for provider_id in today_by do
+			if not seen[provider_id] and spend_of(provider_id) then
+				seen[provider_id] = true
+				table.insert(present, provider_id)
+			end
+		end
+	end
 
 	local function add_group(provider_id: string, plan_wide_only: boolean, forced_bare: string?)
 		local rows, credits = provider_windows(data, provider_id, forced_bare or bare, plan_wide_only, now)
 		if rows == nil or #rows == 0 then
+			local spend = spend_of(provider_id)
+			if spend == nil then
+				return
+			end
+			table.insert(groups, {
+				key = provider_id,
+				id = provider_id,
+				label = parse.provider_label(provider_id),
+				windows = {},
+				credits = 0,
+				spend = spend,
+			})
 			return
 		end
 		table.insert(groups, {
@@ -335,13 +371,16 @@ function M.build(settings: any, data: any, now: number): any
 	end
 
 	local title = if #groups == 0 then ""
-		elseif #groups == 1 then groups[1].label .. " usage"
+		elseif #groups == 1 then groups[1].label .. (if groups[1].spend then " today" else " usage")
 		else "Usage"
 	local parts: { string } = { tostring(#groups), settings.mode, provider or "" }
 	for _, group in groups do
 		table.insert(parts, group.key .. "#")
 		for _, window in group.windows do
 			table.insert(parts, string.format("%s:%s:%d:%s:%s", window.key, window.pct, window.saved or 0, window.reset or "", window.expires or ""))
+		end
+		if group.spend then
+			table.insert(parts, string.format("$%.0f:%.2f", group.spend.tokens, group.spend.cost))
 		end
 	end
 	return { groups = groups, title = title, signature = table.concat(parts, "|") }
@@ -377,6 +416,19 @@ local function line_of(settings: any, model: any): any
 
 	for g, group in model.groups do
 		local pa, pb = settings_lib.palette_for(settings, group.id)
+		if group.spend then
+			-- no quota to bar: the spend group stands on today's tokens and cost alone
+			next_part()
+			if group.label ~= "" then
+				add(group.label, "var(--ou-g" .. g .. "-a)")
+				add(NBSP .. NBSP)
+			end
+			add("TODAY", "var(--ou-lbl)")
+			add(NBSP)
+			add(compact_number(group.spend.tokens), "var(--ou-num-ok)")
+			add(NBSP .. NBSP)
+			add("$" .. string.format("%.2f", group.spend.cost), "var(--ou-soft)")
+		end
 		for w, window in group.windows do
 			local tone = tone_of(window.pct, settings.warn_at, settings.bad_at)
 			if w > 1 and several then
@@ -692,11 +744,19 @@ end
 function M.card_rows(settings: any, model: any, L: any, today_text: string?, today: any, now: number): { any }
 	local rows: { any } = { { text = model.title, color = "var(--oc-head)" } }
 	local several = #model.groups > 1
+	local spend_shown: { [string]: boolean } = {}
 	for g, group in model.groups do
 		local a = settings_lib.palette_for(settings, group.id)
 		local accent = a
 		if several then
 			table.insert(rows, { text = group.label, color = accent })
+		end
+		if group.spend then
+			spend_shown[group.id] = true
+			table.insert(rows, {
+				text = CARD_INDENT .. string.format(L.spend_today, compact_number(group.spend.tokens), group.spend.cost),
+				color = accent,
+			})
 		end
 		local carrier: number? = nil
 		for w, window in group.windows do
@@ -763,18 +823,20 @@ function M.card_rows(settings: any, model: any, L: any, today_text: string?, tod
 			return a.tokens > b.tokens
 		end)
 		for i, item in list do
-			if i > 6 then
-				break
+			if not spend_shown[item.provider] then
+				if i > 6 then
+					break
+				end
+				table.insert(rows, {
+					text = CARD_INDENT
+						.. (parse.provider_label(item.provider) ~= "" and parse.provider_label(item.provider) or item.provider)
+						.. "  "
+						.. compact_number(item.tokens)
+						.. " · $"
+						.. string.format("%.2f", item.cost),
+					color = "var(--oc-mute)",
+				})
 			end
-			table.insert(rows, {
-				text = CARD_INDENT
-					.. (parse.provider_label(item.provider) ~= "" and parse.provider_label(item.provider) or item.provider)
-					.. "  "
-					.. compact_number(item.tokens)
-					.. " · $"
-					.. string.format("%.2f", item.cost),
-				color = "var(--oc-mute)",
-			})
 		end
 	end
 	table.insert(rows, { text = L.settings_hint, color = "var(--oc-hint)", rule = true })

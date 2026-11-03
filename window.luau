@@ -223,6 +223,18 @@ local function providers_present(): { string }
 	end
 	for _, source in fetch.sources() do
 		collect(fetch.kv_get("usage@" .. source))
+		-- a pay-as-you-go provider reports no quota windows, so today's ledger is all it shows up in
+		local today = fetch.kv_get("today@" .. source)
+		if type(today) == "table" and type(today.by_provider) == "table" then
+			for provider, entry in today.by_provider do
+				local tokens = if type(entry) == "table" and type(entry.tokens) == "number" then entry.tokens else 0
+				local cost = if type(entry) == "table" and type(entry.cost) == "number" then entry.cost else 0
+				if not seen[provider] and (tokens > 0 or cost > 0) then
+					seen[provider] = true
+					table.insert(present, provider)
+				end
+			end
+		end
 	end
 	collect(fetch.kv_get("usage")) -- legacy flat key
 	return present
@@ -279,6 +291,7 @@ local function tick(cx: any?)
 			else { reports = {}, capacity = {} },
 		models = if type(models) == "table" and type(models.by_name) == "table" then models else nil,
 		chip = chip,
+		today = if type(data.today) == "table" then data.today else nil,
 	}, now)
 	if #model.groups == 0 then
 		install("")
@@ -351,6 +364,7 @@ end
 local function watchdog_loop()
 	fetch.service()
 	tern.timer(WATCHDOG_MS, watchdog_loop)
+end
 
 -- Official startup hook: fires once per window after the session has settled (saved tabs
 -- restored), so the first draw sees the real panes instead of racing the restore.
@@ -360,8 +374,6 @@ tern.on("window_start", function(cx: any)
 end)
 
 tern.timer(60000, update_loop)
-end
-
 tern.timer(WATCHDOG_MS, watchdog_loop)
 
 -- ── status bar: today's tokens and cost, and the settings shortcut ──────────
