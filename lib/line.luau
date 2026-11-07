@@ -89,13 +89,10 @@ local function countdown(reset_at: number?, now: number): string?
 		return tostring(mins) .. "m"
 	end
 	local hours = math.floor(mins / 60)
-	local rem = mins % 60
 	if hours < 24 then
-		return if rem > 0 then string.format("%dh %dm", hours, rem) else string.format("%dh", hours)
+		return string.format("%dh%02dm", hours, mins % 60)
 	end
-	local days = math.floor(hours / 24)
-	local h = hours % 24
-	return if h > 0 then string.format("%dd %dh", days, h) else string.format("%dd", days)
+	return string.format("%dd%dh", math.floor(hours / 24), hours % 24)
 end
 
 local function span_left(ms: number): string
@@ -107,14 +104,6 @@ local function span_left(ms: number): string
 		return string.format("%dh %dm", math.floor(mins / 60), mins % 60)
 	end
 	return tostring(mins) .. "m"
-end
-
-local function clock_at(reset_at: number, now: number): string?
-	local ahead = reset_at - now
-	if ahead <= 0 or ahead > 36 * 3600 * 1000 then
-		return nil
-	end
-	return os.date("%H:%M", math.floor(reset_at / 1000)) :: string
 end
 
 local function tone_of(pct: number, warn_at: number, bad_at: number): string
@@ -776,24 +765,19 @@ function M.card_rows(settings: any, model: any, L: any, today_text: string?, tod
 				local tone_color = if tone == "warn" then "var(--warn)" else "var(--bad)"
 				wa, wb = tone_color, tone_color
 			end
+			local reset_text = if window.reset == "soon" then L.resets_soon
+				elseif window.reset then string.format(L.resets_in, window.reset :: string)
+				else nil
 			table.insert(rows, {
-				text = string.format(L.window_word, window.label),
+				-- the reset countdown sits between the window label and the remaining share
+				text = string.format(L.window_word, window.label)
+					.. (if reset_text then NBSP .. NBSP .. reset_text else ""),
 				right = tostring(window.pct) .. "% " .. L.left,
 				color = "var(--oc-win-" .. tone .. ")",
 				share = math.clamp(window.pct, 0, 100) / 100,
 				a = wa,
 				b = wb,
 			})
-			if window.reset == "soon" then
-				table.insert(rows, { text = CARD_INDENT .. L.resets_soon, color = "var(--oc-mute)" })
-			elseif window.reset then
-				local row = string.format(L.resets_in, window.reset :: string)
-				local at = window.reset_at and clock_at(window.reset_at :: number, now)
-				if at then
-					row ..= " · " .. at
-				end
-				table.insert(rows, { text = CARD_INDENT .. row, color = "var(--oc-mute)" })
-			end
 			if window.saved and window.saved > 0 and w == carrier then
 				local saved_text = if window.saved == 1
 					then string.format(L.saved_reset, window.saved)

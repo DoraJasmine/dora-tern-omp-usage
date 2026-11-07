@@ -303,7 +303,11 @@ function M.maybe_fetch(source: string, kind: string, force: boolean): boolean
 	end
 	local lock_key = "fetch_lock@" .. source
 	local lock = M.kv_get(lock_key)
-	if type(lock) == "table" and lock.kind == kind and now - (lock.at or 0) < LOCK_MS then
+	local locked = type(lock) == "table" and lock.kind == kind and now - (lock.at or 0) < LOCK_MS
+	-- A forced fetch inside the lock window still refetches, only without re-invalidating: omp's
+	-- cache was dropped moments ago, so the plain read already sees fresh numbers. Dropping it
+	-- here left a model switch waiting for the next regular poll.
+	if locked and force ~= true then
 		return false
 	end
 	M.kv_set(lock_key, { kind = kind, at = now })
@@ -328,7 +332,7 @@ function M.maybe_fetch(source: string, kind: string, force: boolean): boolean
 			end
 		end)
 	end
-	if kind == "usage" and force then
+	if kind == "usage" and force and not locked then
 		-- A manual refresh asks omp to drop its cache first; regular polls take the cache as it is.
 		run(invalidate_argv(source), "invalidate@" .. source, go)
 	else
