@@ -179,11 +179,15 @@ local function provider_windows(data: any, provider: string, bare: string, plan_
 	if capacity and #capacity > 0 then
 		local by_key: { [string]: any } = {}
 		for _, window in capacity do
-			by_key[window.key] = window
-			table.insert(windows, {
+			-- The rendered row, not the kv window, is the merge target: report reset times and saved
+			-- credits must land on the copy the line and the card actually read.
+			local row = {
 				key = window.key, label = window.label, ms = window.ms,
-				left = window.left, reset_at = nil, saved = 0, expires_at = nil, accounts = window.accounts,
-			})
+				left = window.left, reset_at = window.reset_at, saved = window.saved or 0,
+				expires_at = window.expires_at, accounts = window.accounts,
+			}
+			by_key[window.key] = row
+			table.insert(windows, row)
 		end
 		for _, report in reports do
 			credits += report.credits
