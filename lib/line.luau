@@ -250,6 +250,7 @@ function M.build(settings: any, data: any, now: number): any
 	local provider = if type(selection) == "table" and selection.status == "resolved" then selection.provider else nil
 	local bare = if provider then selection.id else ""
 	local notice = nil
+	local fallback_candidates: { any } = {}
 
 	local present: { string } = {}
 	local seen: { [string]: boolean } = {}
@@ -327,8 +328,35 @@ function M.build(settings: any, data: any, now: number): any
 	if settings.mode == "current" then
 		if provider then
 			add_group(provider, false)
+		elseif type(selection) == "table" and selection.status == "ambiguous"
+			and selection.viewing ~= true and type(selection.candidates) == "table" then
+			local seen_provider: { [string]: boolean } = {}
+			for _, candidate in ipairs(selection.candidates) do
+				if type(candidate) == "table" and type(candidate.provider) == "string" and candidate.provider ~= ""
+					and type(candidate.id) == "string" and candidate.id ~= ""
+					and not seen_provider[candidate.provider] then
+					seen_provider[candidate.provider] = true
+					table.insert(fallback_candidates, candidate)
+				end
+			end
+			if #fallback_candidates > 1 then
+				for _, candidate in fallback_candidates do
+					add_group(candidate.provider, false, candidate.id)
+				end
+			else
+				fallback_candidates = {}
+			end
 		end
-		if #groups == 0 then
+		if #groups > 0 and #fallback_candidates > 1 then
+			local L = labels.get(settings.language)
+			local en = labels.get("en")
+			local count = #fallback_candidates
+			notice = {
+				text = string.format(L.same_name_title, count),
+				line = string.format(L.same_name_line, count),
+				detail = L.same_name_detail,
+			}
+		elseif #groups == 0 then
 			local L = labels.get(settings.language)
 			local en = labels.get("en")
 			if provider then
@@ -364,6 +392,13 @@ function M.build(settings: any, data: any, now: number): any
 	local parts: { string } = { tostring(#groups), settings.mode, provider or "",
 		if type(selection) == "table" then selection.selector or selection.reason else "",
 		if notice then notice.detail else "" }
+	if type(selection) == "table" and type(selection.candidates) == "table" then
+		for _, candidate in ipairs(selection.candidates) do
+			if type(candidate) == "table" and type(candidate.selector) == "string" then
+				table.insert(parts, candidate.selector)
+			end
+		end
+	end
 	for _, group in groups do
 		table.insert(parts, group.key .. "#")
 		for _, window in group.windows do

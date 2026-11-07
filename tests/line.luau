@@ -51,9 +51,48 @@ local codex_again = choose("openai-codex")
 assert(#codex_again.groups == 1 and codex_again.groups[1].id == "openai-codex")
 assert(codex_again.notice == nil)
 
--- Removing the bridge or losing its validity must withdraw the old provider.
+-- Removing the bridge falls back to every same-name provider, clearly marked and never picking one.
+data.today.by_provider.leimugpt = { tokens = 3, cost = 0 }
+data.selection = identity.resolve({ chip = "GPT-6.1 Sol", bridge_status = "missing" }, catalog)
+assert(data.selection.status == "ambiguous" and #data.selection.candidates == 2)
+local fallback = line.build(settings, data, 0)
+assert(fallback.notice ~= nil and #fallback.groups == 2, "ambiguous names must show both providers")
+assert(fallback.groups[1].id == "leimugpt" and fallback.groups[2].id == "openai-codex")
+assert(fallback.groups[1].spend.tokens == 3 and fallback.groups[2].windows[1].pct == 73)
+assert(fallback.signature ~= codex_again.signature, "fallback must not look like a resolved provider")
+settings.language = "zh-CN"
+assert(line.build(settings, data, 0).notice.line ~= fallback.notice.line, "the line marker must be localized")
+settings.language = "en"
+
+-- A candidate with no own data is omitted, but the line still says more than one name matched.
+data.today.by_provider.leimugpt = { tokens = 0, cost = 0 }
+local fallback_sparse = line.build(settings, data, 0)
+assert(fallback_sparse.notice ~= nil and #fallback_sparse.groups == 1)
+assert(fallback_sparse.groups[1].id == "openai-codex")
+assert(fallback_sparse.signature ~= fallback.signature)
+
+-- With no candidate data, keep the existing pending state.
+local saved_usage = data.usage
+local saved_codex_today = data.today.by_provider["openai-codex"]
+data.usage = { reports = {}, capacity = {} }
+data.today.by_provider["openai-codex"] = { tokens = 0, cost = 0 }
+local fallback_empty = line.build(settings, data, 0)
+assert(#fallback_empty.groups == 0 and fallback_empty.notice ~= nil)
+assert(fallback_empty.signature ~= fallback_sparse.signature)
+data.usage = saved_usage
+data.today.by_provider["openai-codex"] = saved_codex_today
+
+-- Candidates inside one provider are not a cross-provider fallback.
+local same_provider_catalog = parse.catalog({ models = {
+	{ provider = "codex", id = "second", name = "Same provider" },
+	{ provider = "codex", id = "third", name = "Same provider" },
+} })
+data.selection = identity.resolve({ chip = "Same provider", bridge_status = "missing" }, same_provider_catalog)
+local same_provider = line.build(settings, data, 0)
+assert(#same_provider.groups == 0 and same_provider.notice ~= nil)
+
+-- Invalid bridges and viewed children still cannot use catalog candidates.
 for _, dock in {
-	{ chip = "GPT-6.1 Sol", bridge_status = "missing" },
 	{ chip = "GPT-6.1 Sol", bridge_status = "invalid" },
 	{ chip = "GPT-6.1 Sol", bridge_status = "unsupported" },
 	{ chip = "GPT-6.1 Sol", viewing = true, bridge_status = "ready", identity = {
@@ -61,6 +100,7 @@ for _, dock in {
 	} },
 } do
 	data.selection = identity.resolve(dock, catalog)
+	data.selection.viewing = dock.viewing
 	local pending = line.build(settings, data, 0)
 	assert(#pending.groups == 0 and pending.notice ~= nil, "unresolved selection must not expose an arbitrary provider")
 	assert(pending.signature ~= codex_again.signature)

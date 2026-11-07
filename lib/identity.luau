@@ -184,18 +184,23 @@ function M.resolve(dock: any, catalog: any): any
 		return unavailable("catalog_invalid")
 	end
 	local selected: any = nil
+	local candidates_out: { any } = {}
+	local seen_candidates: { [string]: boolean } = {}
 	for _, candidate in ipairs(candidates) do
 		if not entry_valid(candidate) or displayed_name(candidate) ~= dock.chip then
 			return unavailable("catalog_invalid")
 		end
-		if selected == nil then
-			selected = candidate
-		elseif candidate.provider ~= selected.provider or candidate.id ~= selected.id then
-			return { status = "ambiguous", reason = "catalog_ambiguous", source = "catalog" }
+		if not seen_candidates[candidate.selector] then
+			seen_candidates[candidate.selector] = true
+			table.insert(candidates_out, candidate)
 		end
+		selected = selected or candidate
 	end
 	if selected == nil then
 		return unavailable("catalog_no_match")
+	end
+	if #candidates_out > 1 then
+		return { status = "ambiguous", reason = "catalog_ambiguous", source = "catalog", candidates = candidates_out }
 	end
 	return { status = "resolved", reason = "catalog_unique", source = "catalog", provider = selected.provider,
 		id = selected.id, selector = selected.selector }
