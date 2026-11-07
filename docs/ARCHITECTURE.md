@@ -11,7 +11,7 @@
 
 ## 1. 设计原则
 
-1. **纯 Tern 插件,零 omp 配置** —— 与 jmazzola 架构的根本分歧。omp 扩展需要手改 `config.yml`、配 `showHookStatus`、重启会话,是安装失败的主要来源(本机实测即因路径拼接出错而失败)。改由 host 半直接轮询 omp CLI,牺牲"会话内 ctx.models 精确映射",换来一行安装。
+1. **CLI 采集与可选正式身份桥分离** —— host 轮询负责账户额度/统计;主会话精确身份由随仓库分发的 omp 扩展提供。Tern 一行安装不自动修改 omp 配置,缺桥时仅唯一精确目录候选可解析,不保证重名模型精度。
 2. **host 生产,window 消费** —— 数据采集全部在 host 半(守护进程,常驻、跨窗口唯一),写入 `tern.kv`;window 半只读 kv + 读 UI 树 + 渲染。多窗口零重复轮询。
 3. **提供商无关** —— 不白名单任何提供商;一切窗口/标签/颜色从报告数据推导,新提供商零代码接入。Kimi/Codex 的特殊形态(重复窗口、capacity 聚合)走归一化规则而非特判分支。
 4. **渲染走 CSS,数据走文本** —— 沿用 jmazzola 验证过的方案:用量线是上下文计量器元素的 `::before` 的 `content` 文本,配色/动画全在 CSS;不触碰 omp 自身 DOM 结构,只在既有的稳定 role/id 上锚定。
@@ -45,24 +45,17 @@
 
 ## 3. 关键决策记录(ADR)
 
-### D1 数据获取:host 半轮询 omp CLI,不用 omp 扩展
+### D1 数据获取:host 半轮询 CLI,身份由轻量扩展提供
 
-| | 方案 A:omp 扩展(jmazzola) | **方案 B:host 轮询(采纳)** |
-|---|---|---|
-| 安装 | clone + link + 改 config.yml + statusLine 配置 + 重启 | 一行 install |
-| 数据新鲜度 | 会话内 60s,turn_end 即刷 | 90s + 模型切换即刷(主动 fetch) |
-| 模型映射 | 会话内 `ctx.models.list()` 精确 | `omp models --json` 目录 + 启发回退(R3) |
-| 副作用 | 每会话一个常驻 JS、写状态事实 | 每 90s 一个短进程(~0.6s,NFR-3) |
-| 与 omp 耦合 | setStatus 事实 id 前缀会变(`k.`/`3.`) | 只依赖 CLI 输出 schema,比内部事实 id 稳 |
+额度、目录、统计仍由 host 半按源串行轮询 omp CLI,不会改成每会话重复采集。可选 `omp/extensions/model-identity.js` 只在主 TUI 会话通过隐藏原生 widget 提供实时身份,无轮询、无文件写入。要求 omp ≥ 18.18.0,需在每个运行 omp 的主机加载;路径与配置方式见 README。插件绝不自动修改用户配置。
 
-采纳 B。理由:用户的首要痛点是安装;模型映射的精度损失有回退链兜底(FR-4.2)。
+### D2 当前提供商识别:统一身份解析器
 
-### D2 当前提供商识别:composer UI 树 + models 目录
-
-jmazzola 证明:模型芯片文本节点(id 以 `/name` 结尾,role `omp.composer.model`)在 0.8.0 可从 `cx.session:surface(pane, { root = "dock" })` 读到。本插件:
-1. 每 1 s 读聚焦窗格 dock 树(~40 节点,轻量),提取芯片名与 focus 行(子代理查看)。
-2. 芯片名 → 提供商:host 半维护的目录表(kv `models`,来自 `omp models --json`,字段 `name`/`id`/`selector`/`provider`)。
-3. 匹配顺序:目录 `name` 精确 → 目录 `id`/`selector` 含芯片名 → 内置前缀启发(`opus|sonnet|haiku`→anthropic,`gpt|codex`→openai-codex,`kimi|k2|k3`→kimi-code,`gemini`→google-gemini-cli)→ 放弃,回退"显示全部提供商"。
+1. 每约 1 s 读取聚焦窗格 dock,由 `lib/identity.luau` 提取芯片、子代理 focus 标志和 role `dora.omp.model-identity` 的 JSON。
+2. v1 身份字段为 `sessionId, scope: main, provider, id`。扩展使用 `ctx.models.current()` 实时 getter,不依赖公开 `model_changed` 事件。有效主桥确定 selector;目录对应项与芯片不符时待确认。
+3. 仅桥缺失时允许 v2 目录的唯一精确显示名候选(按 omp 去除开头 `Claude `)。`by_name` 保存候选列表,不丢同名项;无 first-hit、id 子串、前缀启发或配置/额度/消费排序。非法/不支持桥阻止回退。
+4. 查看子代理不复用主身份,只允许子代理芯片的唯一目录候选。未解析显示待确认及悬停帮助;自身提供商无数据只显示自身无数据,绝不退回全部。all/selected 保持原行为。
+5. 诊断复用相同解析结果;模型刷新身份键包括 pane、host、session、selector。约 1 秒是读取周期而非硬时延保证;具体烟测与限制见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
 
 ### D3 用量线渲染:CSS 伪元素文本(沿用 jmazzola 技术)
 
@@ -70,7 +63,7 @@ jmazzola 证明:模型芯片文本节点(id 以 `/name` 结尾,role `omp.compose
 - 线 = 该元素 `::before` 的 `content`:13px 等宽盒,`<提供商> <窗口标签> <━条×8> <N%> <倒计时>` 文本;条形用 `━` 字形(等宽 0.6em),整条一个 `background-clip: text` 静态渐变,每段颜色由字符区间着色(Tern 每元素只画一层渐变且不随位移动画,故内容静止时零重绘)。
 - 悬停目标:composer 附件 chips 行(`.sf-row[data-role='omp.composer.chips']:is(.sf-hidden,.sf-void)`)——平时隐藏、无 title、是 meter 的兄弟节点,恰好做悬浮层;有附件显示时线保持但取消悬停反应。
 - 卡片:悬停 ~400 ms 后由 CSS(兄弟选择器 + 定位)在上方展开玻璃拟态卡片;内容按数据逐行生成,同样走 `content`/DOM 注入。
-- 隐藏策略:**无需隐藏任何东西**。jmazzola 需要隐藏 omp 状态栏里的 usage 事实,因为它的数据经过状态栏;我们不经过,状态栏原样保留。
+- 隐藏策略:不隐藏 omp 状态栏 usage 事实,状态栏原样保留;可选身份桥自身是隐藏原生节点,不占可见行。
 
 ### D4 今日统计:stats 轮询 + kv 逐日累积(沿用 joaodutra88 方案)
 
@@ -91,22 +84,20 @@ joaodutra88 的 labels 模块模式(en 为基准,其他语言 `__index` 回退),
 ## 4. 模块划分
 
 ```
-tern-dora-tern-omp-usage/
-├── plugin.toml            # id=dora-tern-omp-usage, host+window 入口, blocks=[dashboard]
-├── host.luau              # host 半入口:装配 poller + dashboard block
-├── window.luau            # window 半入口:装配 watcher/render/settings/statusline
+dora-tern-omp-usage/
+├── plugin.toml            # id、版本、host/window 入口、dashboard block
+├── host.luau              # fetch 服务和仪表盘
+├── window.luau            # 焦点/主机映射、身份读取、CSS 安装、状态栏和菜单
+├── omp/extensions/model-identity.js  # 可选原生主会话身份桥
 ├── lib/
-│   ├── parse.luau         # 纯函数:omp JSON → 内部模型(无 tern 依赖,可单测)
-│   ├── poller.luau        # host 轮询器(串行队列、退避、kv 写入)
-│   ├── model.luau         # Line/卡片的数据组装(当前提供商、模式、去重、排序)
-│   ├── render.luau        # Line → CSS 文本、卡片 CSS、comet 动画、sheet 管理
-│   ├── watcher.luau       # dock 树读取、芯片名提取、焦点判定
-│   ├── settings.luau      # 设置 schema、校验、kv 读写、变更通知
-│   ├── panel.luau         # canvas 设置面板(节点树 + action 分发)
-│   ├── menus.luau         # palette 菜单(pick 多级)
-│   ├── dashboard.luau     # host block 视图(usage --history + 费用)
-│   └── labels.luau        # en / zh-CN 文案
-└── scripts/check.py       # CI:luau-analyze 类型检查(joaodutra88 同款)
+│   ├── parse.luau         # CLI JSON → 精确身份键和用量模型
+│   ├── identity.luau      # 纯 dock 身份提取和唯一候选解析
+│   ├── fetch.luau         # 按源串行采集、锁和版本化 kv
+│   ├── line.luau          # 供应商分组、用量线与悬停卡片 CSS
+│   ├── settings.luau      # 设置校验与配色
+│   ├── labels.luau        # en / zh-CN 文案
+│   └── update.luau        # 版本检查和更新
+└── tests/                 # identity.luau / line.luau 纯回归脚本
 ```
 
 **plugin.toml**
@@ -137,7 +128,7 @@ title = "Dora omp Usage"
   usage   每 settings.usage_interval(默认 90s,失败退避×2,上限 10min)
           `omp usage --json` → parse.reports() → kv.usage = { at, reports, fail }
   models  每 10min(失败退避)
-          `omp models --json` → parse.catalog() → kv.models = { at, byName, byId, prefix }
+          `omp models --json` → parse.catalog() → kv.models = { version=2, at, by_name=候选列表, by_selector, by_provider }
   stats   每 5min
           `omp stats --json` → parse.timeseries() → 今日和 → kv.today / kv.days(逐日合并)
 手动刷新(命令/点击/模型切换):把 usage 提到队首,并带 `omp usage invalidate` 前置一次
@@ -152,9 +143,9 @@ title = "Dora omp Usage"
 ```
 tern.timer(1000) tick:
   1. cx.session:focused() / :panes() → 聚焦窗格是否 agent
-  2. 是 → cx.session:surface(pane, { root="dock" }) → 芯片名、focus 行、meter 节点存在性
-  3. 读 kv.usage / kv.models / kv.today(settings 每 tick 顺便重读)
-  4. model.build(settings, chip, data) → Line 模型(签名 = 内容指纹)
+  2. 是 → cx.session:surface(pane, { root="dock" }) → identity.read_dock(芯片、focus、隐藏身份)
+  3. 读按源 usage / models / today(settings 每 tick 顺便重读)
+  4. identity.resolve(dock, models) → line.build(settings, data) → Line 模型(含待确认/自身无数据)
   5. 签名变化 → render.line():生成整段 CSS → tern.css("usage", css)
      变化窗口 → 附 comet 动画 CSS(1.4s 后清除)
   6. 非 agent 窗格 → tern.css("usage", "") 清除
@@ -205,13 +196,15 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 
 | key | 结构 | 写者 | 读者 |
 |---|---|---|---|
-| `usage` | `{ at, ok, reports: Report[](已归一), err? }` | poller | window 全部 |
-| `models` | `{ at, byName: {name→provider}, byId: {id→provider}, prefix: {prefix→provider} }` | poller | watcher |
-| `today` | `{ at, tokens, cost, day: "YYYY-MM-DD", by_provider: {id → {tokens, cost}} }` | poller | window/statusbar |
-| `days` | `{ ["YYYY-MM-DD"]: {tokens, cost} }`(62 天滚动) | poller | dashboard |
-| `settings` | `{ mode, selected[], order[], colors{key→spec}, warnAt, badAt, usageInterval, statsInterval, showTokens, showCost, alerts, language }` | settings 模块 | window 全部 |
+| `usage@<源>` | `{version=2, at, reports, capacity}`;供应商键保留大小写 | fetch | window |
+| `models@<源>` | `{version=2, at, by_name: {显示名→候选列表}, by_selector: {provider/id→条目}, by_provider}` | fetch | identity / line |
+| `today@<源>` | `{version=2, at, tokens, cost, day, by_provider}` | fetch | window/statusbar |
+| `provider_days@<源>` | `{version=2, days: {日期→供应商分摊}}` | fetch | fetch |
+| `by_model_prev@<源>` | `{version=2, by_provider: byModel累计值}` | fetch | fetch |
+| `days@<源>` | `{日期: {tokens, cost}}`(62 天滚动) | fetch | dashboard |
+| `settings` | `mode, selected, order, colors, warn_at, bad_at, usage_interval, stats_interval, show_tokens, show_cost, alerts, language, update_check` | settings | window |
 
-设置 key 的默认值与校验集中在 `settings.luau` 的 SCHEMA 表,面板/菜单/命令共用一份。
+设置默认值与校验集中在 `settings.luau`。升级时拒读旧小写化的 usage/models/today 记录,供应商累计基线和账本成对重建;保留每日总量历史,沿用原有分摊对账算式。
 
 ## 7. 渲染规格(render.luau)
 
@@ -237,9 +230,9 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 | 情形 | 表现 |
 |---|---|
 | omp CLI 不存在 / 启动失败 | kv.usage 不更新;线显示上次数据,卡片标注"数据 X 分钟前";连续 3 次失败线变为灰色省略号,不再弹任何 toast |
-| `omp usage --json` 解析失败 / reports 空 | 同上;若从未成功过 → 线不渲染 |
-| 当前提供商无报告(未登录) | `current` 模式回退为"全部提供商"(FR-4.2 回退链末端) |
-| 芯片名读不到(非 omp 窗格 / 树变化) | 线隐藏;`current` 模式用最后一次有效芯片(≤2min) |
+| `omp usage --json` 解析失败 / reports 空 | 保留可用旧数据并说明陈旧;当前模式自身无数据仍显示自身提示,不以其他提供商替代 |
+| 当前提供商无额度或今日消费 | `current` 显示自身提供商无数据提示,不切换其他提供商 |
+| 身份缺失/歧义/非法/不支持 | 当前模式待确认及悬停说明,不复用旧芯片身份;非 omp 窗格清除线 |
 | meter 锚点缺失(Tern 升级破选择器) | 线与卡片整体静默不渲染;状态栏今日段不受影响;README 注明需适配版本 |
 | `omp stats` 为空 / 未同步 | 今日段隐藏;仪表盘费用卡显示空态文案 |
 | kv 读写异常 | pcall 吞掉,按默认值处理 |
@@ -259,14 +252,14 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 
 | 项 | 目标版本 | 说明 |
 |---|---|---|
-| Tern | 0.8.x(验证 0.8.0+) | 依赖:surface(dock 树)、css sheets、canvas、chrome.status、block、kv、process、timer、command/pick/prompt |
-| omp | ≥ 18.9(验证 18.14.1) | 依赖:`usage --json`(reports/limits/scope/window/amount/resetCredits/capacity)、`models --json`、`stats --json`、`usage --history --json` |
-| 平台 | Windows(验证)/ macOS / Linux | omp 托管路径探测三平台齐全(joaodutra88 清单);其余无平台分支 |
+| Tern | 0.8+;身份桥验证 0.9.12 | 依赖 surface(dock 树)、原生隐藏 widget 节点、CSS 等;旧版桥兼容性未验证 |
+| omp | 身份桥 ≥ 18.18.0(Windows / WSL 已验证) | CLI 采集独立;桥需每个 omp 主机加载 |
+| 平台 | 既有 CLI 采集支持 Windows/WSL/SSH | 身份桥已验证 Windows/WSL picker 切换、Windows 双 pane 隔离与新会话;SSH 无可用测试主机 |
 
 **风险控制**:
 - R1(选择器漂移):`render.luau` 顶部集中全部选择器常量并注明来源版本;启动探测失败 → 降级开关(线关、状态栏照常)。
 - R2(CLI schema):parse 层每字段 `type()` 防御;未知窗口/提供商显示而非丢弃。
-- R3(模型映射精度):三级回退链,最差情况显示全部提供商(信息不多不少)。
+- R3(模型映射精度):主桥提供正式身份;仅缺桥允许唯一精确候选,歧义/非法/不支持时待确认,禁止其他提供商替代。
 - R4(限流):默认 90 s + 指数退避;`invalidate` 只在手动刷新;设置页提示调低间隔的风险。
 
 ## 12. 测试与发布
@@ -296,12 +289,9 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 - **Host 半在 pane 所在的机器上运行**:"Install a host half on the machine whose panes it should serve." 远程主机的 daemon 从**该机器自己的插件文件夹**加载插件。
 - **Window 半是本地的**:"Your window half is local: it runs from your plugins folder and **sees every pane in your windows, local and remote**." Windows Tern 窗口(无论显示本地还是 WSL 的 pane)画线的都是 Windows 侧的 window half。
 - **kv 不跨主机同步**:"Both halves of a plugin, and the window half in every window, share this folder and one `tern.kv` store"(同一台机器内共享一个 kv.json);**"Each machine reads its own settings; nothing syncs between hosts."**
-- 因此本插件的数据语义:
-  - **用量限额线** = 窗口所在机器的 omp 账号数据(账号级;若两机登录同一批账号,数字一致,显示正确);
-  - **今日统计** = 窗口所在机器的 stats.db("本机今日"文案即为此语义);
-  - 远程主机(如 WSL)要服务它自己的 pane/窗口,必须在它上面安装插件(host half),其数据写入该机器的 kv。
-- 已实测验证(探针写入 `probe_host`/`probe_window`):Windows kv 含 windows 的 host+window 探针;WSL kv 仅含 linux 的 host 探针 —— 与文档完全一致。
-- **限制**:Windows 窗口显示 WSL pane 时,无法读到 WSL 的今日统计(无跨主机 API)。缓解:① 在 WSL 侧开 Tern 窗口看 WSL 数据;② 未来可探测远程 pane(cwd 为 POSIX 路径)并经 ssh 拉取远程 stats(超出 MVP,记录备查);③ 向 Stencil 提议暴露 pane 所属 host 或远程 kv 只读访问。
+- kv 本身仍不跨主机同步,本插件不尝试从窗口直接读取远端 kv。当前 fetch 服务按 `local / wsl:<发行版> / ssh:<主机>` 分源执行 CLI,窗口使用 pane 所属 Tern 主机选择数据。
+- 无法映射的主机不借用本机账户;`@wsl` 名称不能区分多个已安装发行版时返回不可用。源码不会把任意 SSH 主机映射到首个 WSL 发行版。
+- 模型身份由当前 pane 的隐藏 TSP 节点随终端输出传输,不是共享文件或跨机 kv。每个实际运行 omp 的主机需要独立加载身份扩展。
 
 ## 15. 附录:参考项目 API 速查(实测自源码)
 

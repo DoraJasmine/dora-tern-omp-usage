@@ -2,7 +2,7 @@
 
 **Dora omp Usage** 是一款 [Tern](https://stencil.so/tern) 插件,把 omp 各家服务的订阅额度展示在输入栏上方的上下文用量条处,支持 omp 所有的提供商——Kimi、Codex、Claude、Gemini、MiniMax 等,并附带当日 token 用量与费用统计、近 7 天仪表盘和完善的设置界面。
 
-一行命令即可安装,无需对 omp 做任何配置:
+一行安装 Tern 插件:
 
 ```sh
 tern plugin install github.com/DoraJasmine/dora-tern-omp-usage
@@ -19,22 +19,43 @@ English: [README.en.md](README.en.md)
 - **额度展示**——聚焦 omp 窗格后,各家服务的 5 小时 / 7 天等窗口用量一目了然:填充条、剩余比例、重置倒计时,逐家配色;余量不足时自动转为琥珀色和红色。
 - **按量计费的服务**——没有订阅窗口(因而不在额度报告里)的服务,退一步显示当日消耗:`Bailian  TODAY 24.6M · $0.43`,没有进度条;它同样出现在卡片、设置里的服务开关与排序中。
 - **悬浮卡片**——鼠标停在用量线上,即可查看各窗口的计量器、重置时间与已存重置的到期时间;卡片支持悬停停留,不会一闪而过。
-- **模型跟随**——切换模型(Alt+P)后约两秒内,额度自动切换到对应的服务;查看子代理时亦然。
-- **多主机**——远程主机(如 WSL、服务器)上的窗格展示该主机自己的数据,与本机互不干扰,全程自动完成。
+- **模型跟随**——主会话加载下述身份扩展后,直接读取当前 provider/id,同名甚至同 id 的跨提供商模型也可区分;无需发送消息。通常随约 1 秒的界面读取周期更新,不是硬实时保证。未加载扩展或查看子代理时,仅唯一精确显示名可解析,否则显示待确认及说明,不猜测。
+- **多主机**——按 Tern 主机归属读取各源数据;无法映射的主机不借用本机数据,多个 WSL 发行版无法区分时也不猜选第一家。身份扩展需分别在各 omp 主机加载。
 - **当日统计**——状态栏常驻当日 token 用量与费用,点击可打开近 7 天仪表盘。
 - **设置**——通过 `Ctrl+Alt+U` 或命令面板打开:显示模式、服务排序、逐家配色、阈值、用量与当日统计的刷新间隔、界面语言(English / 简体中文)等。
 
 ## 环境要求
 
-- Tern 0.8 及以上(在 0.9.8 上验证,Windows 与 WSL)
-- omp 18.9 及以上(在 18.14.1 上验证),并已登录至少一家有用量限额的服务
-- 无需注册 omp 扩展,不改动任何 omp 配置文件
+- Tern 0.8 及以上;身份桥已在 Tern 0.9.12 的隔离无界面环境验证,旧版原生节点兼容性未验证。
+- omp **18.18.0 及以上**用于身份扩展;已在 Windows 与 WSL 的 omp 18.18.0 验证。CLI 用量采集仍独立于扩展。
+- 插件不自动修改 omp 配置;要精确跟随主会话,需在**每个运行 omp 的主机**加载随仓库分发的 `omp/extensions/model-identity.js`。
+
+### 加载主会话身份扩展
+
+先取得本仓库文件(例如 clone 到固定目录),再在对应主机的 omp `config.yml` 中将扩展的**绝对路径**加入已有 `extensions` 列表,保留其他配置:
+
+```yaml
+extensions:
+  - 'D:/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js'
+```
+
+上例适用于 Windows omp。WSL/Linux omp 应使用该主机可访问的 POSIX 路径,例如 `/home/me/dora-tern-omp-usage/omp/extensions/model-identity.js`;若仓库在 Windows D 盘,WSL 中为 `/mnt/d/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js`。SSH 主机需把文件放到远端并使用远端绝对路径。重新启动对应 omp 会话使配置生效。
+
+也可不修改配置,在该主机上显式启动(此命令会禁用其他自动发现的扩展):
+
+```sh
+omp --no-extensions -e /absolute/path/to/dora-tern-omp-usage/omp/extensions/model-identity.js
+```
+
+Windows PowerShell 示例: `omp --no-extensions -e 'D:/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js'`。仅安装 Tern 插件不保证重名模型的精确识别;身份扩展不轮询、不写文件、不改变模型芯片布局。查看子代理时不使用主会话身份,重名仍会待确认。详见[身份与限制](docs/CHIP-AMBIGUITY.md)。
 
 ## 数据说明
 
 - 额度数据来自 `omp usage --json`,omp 登录了哪些服务就展示哪些,新服务无需更新插件;
 - 当日统计自当地零点起,覆盖所有服务,金额按 omp 模型目录中的 API 牌价折算——反映的是"若按 API 直连计费"的等效费用,并非订阅账单;
 - 按量计费(没有订阅限额窗口)的服务不会出现在额度报告里,只在当日统计中留痕,用量线上以今日消耗的形式出现。
+- 「当前模型」模式只显示已解析的自身提供商;该提供商暂无用量/今日消费时显示自身无数据提示,绝不借用其他提供商。身份缺失、冲突或不支持时显示待确认;可悬停查看原因,通过诊断命令查看身份来源与状态。「全部/已选」模式不受此限制。
+- 升级 2.0.0 时,旧版小写化的额度/目录/今日缓存会重新拉取,按供应商的累计基线与账本一起重建,避免合并大小写不同的供应商。每日总量历史 `days@<source>` 保留;供应商分摊沿用既有对账算法。
 
 ### 关于额度的更新时效
 

@@ -29,7 +29,7 @@
 | `tern.runtime.os` | 双方 | 判定平台(仅 Windows 检测 WSL) | fetch |
 | `tern.on`(window_start / focus / budget) | 窗口 | 生命周期事件 | window |
 | `cx.session:focused / pane / panes` | 窗口 | 焦点判定、composer 树读取 | window |
-| `cx.session:surface` | 窗口 | 读 composer 树(模型芯片名) | window |
+| `cx.session:surface` | 窗口 | 读 composer 芯片、子代理 focus 与隐藏身份节点 | window |
 | `cx.session:block_types` | 窗口 | 开仪表盘块前的目录门闸 | window |
 | `cx.hosts:list / current` | 窗口 | 主机列表、pane 归属与远程主机上报 | window |
 | `cx:new_block` | 窗口 | 打开仪表盘块 | window |
@@ -49,6 +49,9 @@
 所有调用均以 `pcall` 包裹——写入失败是静默的,pcall 至少保证调用方不被中断。各键的用途见
 [实现指南](IMPLEMENTATION.md)第 3 节:数据按源分键(`usage@local`、`usage@wsl:<发行版>`、
 `usage@ssh:<主机名>` 等),另有设置、锁、trace 等。
+
+2.0.0 的 `fetch.kv_get` 只接受 `usage/models/today@<source>` 的 v2 记录,读取时即排除旧小写化身份缓存。供应商基线与账本以 v2 包装并成对重建,每日总量历史不变;具体结构见实现指南。
+
 
 注意事项:
 
@@ -121,9 +124,11 @@ command`)或 nil。插件用它展示焦点窗格所属主机的当日 token 与
 
 ### cx.session:surface(pane, { root = "dock" })
 
-读取窗格的 UI 树(节点结构为 `{id, p:{role, spans:[{t}]}, c:[...]}`)。插件用它从聚焦 omp
-窗格的 composer 区提取**模型芯片名**(role `omp.composer.model` 下 id 以 `/name` 结尾的节点),
-作为"当前模型 → 提供商"映射的输入。每秒一次、每次约 40 个节点,开销很小;调用务必 pcall。
+读取窗格 UI 树(节点结构为 `{id, p:{role, spans:[{t}]}, c:[...]}`),每约 1 秒读取 dock,调用务必 pcall。`lib/identity.luau` 提取模型芯片、子代理 focus 与隐藏 role `dora.omp.model-identity`。桥 JSON v1 包含 `sessionId, scope: main, provider, id`;重复/截断/非法/不支持节点不能降级为缺桥。
+
+有效主桥确定当前 provider/id;子代理不继承。仅缺桥或有效主桥下查看子代理时,才可使用目录 v2 的唯一精确显示名候选;无 first-hit、模糊/id 子串或启发。未解析显示待确认及悬停帮助,诊断共享解析结果。
+
+桥由仓库 `omp/extensions/model-identity.js` 提供,要求 omp ≥ 18.18.0,通过 `belowEditor` 隐藏原生 widget 和实时 `ctx.models.current()` getter,不依赖公开模型变更事件、不轮询、不写文件。需在每个 omp 主机显式加载,Windows/WSL/SSH 绝对路径示例见 README。
 
 ### cx.session:block_types()
 
@@ -185,7 +190,7 @@ sessions、panes`)。插件用它完成三件事:
 | `omp usage --json` | 各提供商限额(reports + capacity) | `usage@<源>` → 线/卡片 |
 | `omp usage invalidate` | 手动刷新前清除 omp 缓存 | fetch(force 时) |
 | `omp usage --history --json --days 7` | 逐小时限额快照 | 仪表盘 |
-| `omp models --json` | 模型目录(芯片名→提供商、价格表) | `models@<源>` |
+| `omp models --json` | 模型目录(v2 候选列表、selector/提供商索引、价格表) | `models@<源>` |
 | `omp stats --json` | timeSeries(当日)+ byModel(按提供商分解) | `today@<源>` / 账本 |
 
 **远程执行方式**:本机源直接运行;WSL 源经 `wsl.exe -d <发行版> -- sh -lc 'omp …'` 穿透;

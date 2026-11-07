@@ -4,6 +4,7 @@
 -- Adapted here: windows come from structured omp reports (lib/parse), not from status-line text.
 local parse = require("./parse")
 local settings_lib = require("./settings")
+local labels = require("./labels")
 
 local M = {}
 
@@ -122,6 +123,7 @@ local function in_scope(bare: string, scope_model: string, scope_tier: string): 
 	if bare == "" then
 		return false
 	end
+	bare = string.lower(bare)
 	if scope_model ~= "" and bare ~= scope_model and not string.find(bare, scope_model, 1, true) then
 		return false
 	end
@@ -241,41 +243,13 @@ local function provider_windows(data: any, provider: string, bare: string, plan_
 	return rows, credits
 end
 
--- The line's groups for the mode: `current` follows the chip's provider (falling back to every provider
--- when it has nothing to show), `all` and `selected` list providers plan-wide.
+-- Current mode never borrows another provider's data. Other modes remain plan-wide.
 function M.build(settings: any, data: any, now: number): any
 	local groups: { any } = {}
-	local provider: string? = nil
-	local bare = ""
-	if data.chip and data.chip ~= "" then
-		local entry = nil
-		if data.models then
-			entry = data.models.by_name[data.chip]
-			if entry == nil then
-				local chip_lower = string.lower(data.chip)
-				local best: any = nil
-				for name, candidate in data.models.by_name do
-					local name_lower = string.lower(name)
-					if name_lower == chip_lower then
-						best = candidate
-						break
-					end
-					if candidate.id ~= "" and string.find(chip_lower, candidate.id, 1, true) then
-						if best == nil or #candidate.id < #best.id then
-							best = candidate
-						end
-					end
-				end
-				entry = best
-			end
-		end
-		if entry then
-			provider = entry.provider
-			bare = entry.id or ""
-		else
-			provider = parse.provider_hint(data.chip)
-		end
-	end
+	local selection = data.selection
+	local provider = if type(selection) == "table" and selection.status == "resolved" then selection.provider else nil
+	local bare = if provider then selection.id else ""
+	local notice = nil
 
 	local present: { string } = {}
 	local seen: { [string]: boolean } = {}
@@ -350,12 +324,32 @@ function M.build(settings: any, data: any, now: number): any
 			end
 		end
 	end
-	if #groups == 0 then
-		-- current mode (or a mode that found nothing): follow the model's provider
+	if settings.mode == "current" then
 		if provider then
 			add_group(provider, false)
 		end
-		-- the provider has nothing (signed out, or the chip maps nowhere useful): every provider
+		if #groups == 0 then
+			local L = labels.get(settings.language)
+			local en = labels.get("en")
+			if provider then
+				local label = parse.provider_label(provider)
+				notice = { text = string.format(L.provider_no_data, label),
+					line = string.format(en.provider_no_data, label), detail = L.provider_no_data_detail }
+			else
+				local reason = if type(selection) == "table" then selection.reason else ""
+				local detail = if reason == "bridge_invalid" or reason == "bridge_unsupported" or reason == "bridge_chip_mismatch"
+					then L.identity_invalid
+					elseif type(selection) == "table" and selection.viewing then L.identity_viewing
+					elseif reason == "catalog_ambiguous" then L.identity_need_extension
+					else L.identity_unavailable
+				notice = { text = L.identity_pending, line = en.identity_pending, detail = detail }
+			end
+		end
+	elseif #groups == 0 then
+		-- Preserve the non-current modes' empty-selection fallback.
+		if provider then
+			add_group(provider, false)
+		end
 		if #groups == 0 then
 			for _, provider_id in settings_lib.ordered(settings, present) do
 				add_group(provider_id, true)
@@ -363,10 +357,13 @@ function M.build(settings: any, data: any, now: number): any
 		end
 	end
 
-	local title = if #groups == 0 then ""
+	local title = if notice then notice.text
+		elseif #groups == 0 then ""
 		elseif #groups == 1 then groups[1].label .. (if groups[1].spend then " today" else " usage")
 		else "Usage"
-	local parts: { string } = { tostring(#groups), settings.mode, provider or "" }
+	local parts: { string } = { tostring(#groups), settings.mode, provider or "",
+		if type(selection) == "table" then selection.selector or selection.reason else "",
+		if notice then notice.detail else "" }
 	for _, group in groups do
 		table.insert(parts, group.key .. "#")
 		for _, window in group.windows do
@@ -376,7 +373,7 @@ function M.build(settings: any, data: any, now: number): any
 			table.insert(parts, string.format("$%.0f:%.2f", group.spend.tokens, group.spend.cost))
 		end
 	end
-	return { groups = groups, title = title, signature = table.concat(parts, "|") }
+	return { groups = groups, title = title, notice = notice, signature = table.concat(parts, "|") }
 end
 
 -- ── the line ────────────────────────────────────────────────────────────────
@@ -405,6 +402,9 @@ local function line_of(settings: any, model: any): any
 			add(" ")
 			add(SEPARATOR .. NBSP, "var(--ou-sep)")
 		end
+	end
+	if model.notice then
+		add(unbroken(model.notice.line), "var(--ou-dim)")
 	end
 
 	for g, group in model.groups do
@@ -736,6 +736,9 @@ end
 -- resets, then today's total and its per-provider breakdown, then the settings hint.
 function M.card_rows(settings: any, model: any, L: any, today_text: string?, today: any, now: number): { any }
 	local rows: { any } = { { text = model.title, color = "var(--oc-head)" } }
+	if model.notice then
+		table.insert(rows, { text = model.notice.detail, color = "var(--oc-mute)" })
+	end
 	local several = #model.groups > 1
 	local spend_shown: { [string]: boolean } = {}
 	for g, group in model.groups do
@@ -994,7 +997,7 @@ end
 
 -- The whole sheet for a model, or "" when there is nothing to show.
 function M.sheet(settings: any, model: any, L: any, today_text: string?, today: any, now: number): string
-	if model == nil or #model.groups == 0 then
+	if model == nil or (#model.groups == 0 and model.notice == nil) then
 		return ""
 	end
 	return line_css(settings, model) .. card_css(M.card_rows(settings, model, L, today_text, today, now))

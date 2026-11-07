@@ -21,6 +21,8 @@ window.luau          窗口端(window half,每个窗口的 UI 线程):
                        └ 设置菜单(pick/prompt)、命令、诊断
 lib/parse.luau       纯函数,无 tern 调用(可单测):omp JSON → 内部模型
 lib/fetch.luau       取数器:数据源(local / wsl:<发行版> / ssh:<主机>)、按源串行队列与锁
+lib/identity.luau    统一 dock 身份读取/解析(纯函数);主桥优先、缺桥唯一精确候选
+omp/extensions/model-identity.js  可选主会话隐藏身份桥(omp ≥ 18.18.0,每个 omp 主机加载)
 lib/line.luau        线与卡片的模型组装 + 全部 CSS 生成
 lib/settings.luau    设置读写(tern.kv)+ 调色板预设
 lib/labels.luau      en / zh-CN 文案(缺键回退 en)
@@ -64,8 +66,8 @@ fetch.service(5s)                               tick(1s / focus / window_start /
  ├ detect_wsl(10min):wsl.exe -l -q              ├ refresh_host_map:cx.hosts:list() → pane→主机
  ├ maybe_fetch(local,"usage")                   ├ refresh_cache:各源 usage@/today@ 快照
  │   omp usage --json → parse.usage             ├ data_for(焦点pane):host→source→数据
- ├ maybe_fetch(local,"models")                  ├ read_dock:composer 树 → 模型芯片名
- │   omp models --json → parse.catalog          └ line.build → line.sheet → tern.css
+ ├ maybe_fetch(local,"models")                  ├ read_dock:芯片、focus、隐藏主身份
+ │   omp models --json → parse.catalog(v2)      └ identity.resolve → line.build → line.sheet → tern.css
  ├ maybe_fetch(local,"stats")
  │   omp stats --json → 当日总量 + 按提供商账本
  └ maybe_fetch("wsl:<发行版>" / "ssh:<主机>", …)
@@ -80,14 +82,17 @@ WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
 
 | 键 | 内容 |
 |---|---|
-| `usage@<s>` / `models@<s>` | 各源限额报告(已归一、已去重)/ 模型目录 |
-| `today@<s>` | `{at, tokens, cost, day, by_provider}` 当日统计与按提供商分解 |
+| `usage@<s>` / `models@<s>` | 各源 v2 限额报告 / v2 模型目录 `{version=2, at, by_name=候选列表, by_selector, by_provider}` |
+| `today@<s>` | `{version=2, at, tokens, cost, day, by_provider}` 当日统计与按提供商分解 |
 | `days@<s>` | 各源逐日 `{tokens, cost}`(62 天滚动,仪表盘聚合用) |
-| `provider_days@<s>` / `by_model_prev@<s>` | 按提供商的当日账本 / byModel 累计基线(差分用) |
+| `provider_days@<s>` / `by_model_prev@<s>` | `{version=2, days}` 按提供商账本 / `{version=2, by_provider}` byModel 累计基线 |
 | `wsl_distros` / `remote_hosts` | 检测到的 WSL 发行版 / 窗口上报的已连接远程主机 |
 | `fetch_lock@<s>` | 各源取数锁(4 秒窗口) |
 | `settings` | 全部设置(DEFAULTS 见 settings.luau) |
 | `refresh_request` / `trace` | 手动刷新请求 / 最近 20 条取数事件(带 source 标注) |
+
+2.0.0 保留供应商及模型 id 原始大小写。`fetch.kv_get` 在读取时拒绝旧 `usage/models/today` 缓存,不能边刷新边展示旧的合并供应商数据。旧供应商账本和累计基线一起重建,沿用原对账公式;`days@<s>` 的每日总量历史不清除。未知主机不读本机缓存;`@wsl` 名称无法区分多个发行版时返回不可用,不任取第一项。
+
 
 ## 4. 渲染层(line.luau)
 
@@ -95,10 +100,14 @@ WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
   `::before` **文本内容**;一条 `background-clip: text` 的静态渐变按字符区间着色并填充计量条
   (`━`×8,每字符 0.6em)。**条形位置按字符数推算,因此线内不能出现中文**——CJK 字宽约为
   等宽字符的两倍,会破坏填充与动效的对齐;中文仅出现在卡片里。
+- 待识别/无数据提示同样使用 ASCII 用量线;卡片标题和说明按 en/zh-CN 本地化,避免中文宽度破坏字符定位。
 - 悬停目标是 composer 的空附件行(`omp.composer.chips`,平时隐藏);卡片是其 `::after`,
   默认 `visibility: hidden` 并带 0.5 秒过渡延迟,鼠标移开后短暂停留仍可悬停,不会一闪而过。
 - 没有额度窗口的按量计费服务(只存在于 `today@<s>.by_provider`)由 `M.build` 补成 `spend` 组:线上一段
   `TODAY 18.5M · $0.35`(纯 ASCII),卡片一行中文全写;该类组同时参与签名,数字变化才重写 CSS。
+- 当前模式统一使用 `identity.resolve` 结果:有效主桥给出 provider/id/sessionId;仅缺桥允许唯一精确显示名目录候选(去除开头 `Claude `)。查看子代理不复用主桥。非法/不支持桥、重名或矛盾信号显示待确认及悬停说明;自身提供商无数据显示自身提示,不借用其他提供商。all/selected 不变。
+- 禁止 first-hit、前缀/id 子串启发及配置/消费证据排名。诊断使用同一解析结果;刷新键包括 pane、host、session、selector,不能只比较芯片文字。
+- 扩展使用 `ctx.models.current()` 实时 getter 与隐藏 role `dora.omp.model-identity` JSON v1;无公开 `model_changed` 事件依赖、无轮询、无写文件。README 给出每主机 Windows/WSL/SSH 加载方式。约 1 秒是读取周期,非固定延迟承诺;子代理重名仍待确认。烟测证据见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
 - 全部 CSS 在内容签名变化时整表重写(`tern.css("usage-plus", css)`),无状态残留;级联中的
   表名为 `plugin:local:dora-tern-omp-usage:usage-plus`。
 - **锚点选择器集中在 line.luau 顶部**(`METER`/`HOST_BASE`)。Tern 升级后若线条消失,先用诊断命令

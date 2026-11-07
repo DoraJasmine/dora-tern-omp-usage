@@ -4,7 +4,7 @@
 [Tern](https://stencil.so/tern), for **every provider omp reports** (Kimi, Codex, Claude, Gemini, MiniMax, …),
 plus today's tokens & API-price cost with a per-provider breakdown, a 7-day dashboard, and a settings panel.
 
-**One-line install, no omp configuration.**
+**One-line Tern plugin install:**
 
 ```sh
 tern plugin install github.com/DoraJasmine/dora-tern-omp-usage
@@ -18,9 +18,30 @@ Or paste the same address into Tern's **Preferences › Plugins › Install…**
 
 ## Requirements
 
-- Tern 0.8+ (tested on 0.9.8, Windows and WSL)
-- [omp](https://omp.sh) 18.9+ (tested on 18.14.1), signed in to at least one provider with usage limits
-- No omp extension, no `config.yml` edits, no restart — install and it works
+- Tern 0.8+; the identity bridge was exercised in isolated headless Tern 0.9.12. Older native-node compatibility is not verified.
+- [omp](https://omp.sh) **18.18.0+** for the companion identity extension; exercised with Windows and WSL omp 18.18.0. CLI usage collection remains independent.
+- The plugin never edits omp configuration automatically. Exact main-session identity requires loading the bundled extension on **each host running omp**.
+
+### Load the main-session identity extension
+
+Obtain this repository (for example, clone it to a stable directory). Add its extension's **absolute path** to the existing `extensions` list in that host's omp `config.yml`, preserving other entries:
+
+```yaml
+extensions:
+  - 'D:/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js'
+```
+
+That example is for Windows omp. For WSL/Linux omp use a host-accessible POSIX path, such as `/home/me/dora-tern-omp-usage/omp/extensions/model-identity.js`. A checkout on Windows drive D is accessible from WSL as `/mnt/d/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js`. For SSH, place the file on the remote host and use its remote absolute path. Restart the corresponding omp session to load the configuration.
+
+Alternatively, explicitly launch on that host without editing configuration (this disables other automatically discovered extensions):
+
+```sh
+omp --no-extensions -e /absolute/path/to/dora-tern-omp-usage/omp/extensions/model-identity.js
+```
+
+Windows PowerShell: `omp --no-extensions -e 'D:/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js'`.
+
+Installing only the Tern plugin cannot guarantee exact identity for duplicate model names. The companion does not poll, write files, or change model-chip layout. A viewed child never inherits the main session's identity; duplicate child names remain pending. See [identity and limits](docs/CHIP-AMBIGUITY.md).
 
 ## What it shows
 
@@ -31,11 +52,8 @@ Or paste the same address into Tern's **Preferences › Plugins › Install…**
   provider toggles and the ordering menu.
 - **Hover card** with per-window meters, reset times and clock times, saved-reset expiries, today's totals and
   settings shortcut. It stays open while you point at it.
-- **Model follow**: switches to the focused agent's provider within ~2 s of a model switch (Alt+P), and shows a
-  viewed subagent's model's provider.
-- **Per-host data**: a pane on a remote host (WSL, a server) shows that host's accounts and stats; local panes
-  show yours. Handled automatically — the plugin opens a small data block on each remote host and parks it out
-  of your tab bar.
+- **Model follow**: the companion exposes the live main-session provider/id, distinguishing models with identical names and bare ids without sending messages. Updates normally follow the ~1 s surface-read cycle, not a hard latency guarantee. Without the bridge, or while viewing a child, only a unique exact displayed-name catalog match resolves; otherwise the line shows a helpful pending notice.
+- **Per-host data**: a pane on WSL or an SSH host shows that host's accounts and stats, collected through the corresponding host transport; local panes show local data. Exact identity additionally requires loading the companion on that host.
 - **Status bar**: 🔥 today's tokens and 💸 today's API-price cost for the focused pane's host.
 - **Dashboard**: 7 days of usage history plus today/week/month API-price cost (`r` refreshes).
 - **Settings** (`Ctrl+Alt+U`, the status-bar `usage` segment, or the palette): show mode (current model /
@@ -53,6 +71,8 @@ Or paste the same address into Tern's **Preferences › Plugins › Install…**
 - **Prices** come from omp's model catalog (`omp models --json`): the API list price per million tokens for
   input, output, cache reads and cache writes. The dollar amounts are therefore the **API-equivalent cost** of
   your usage — what it would have cost at API rates — not your subscription bill.
+- **Current-model mode** never substitutes another provider: a resolved provider without usage or today's spend gets its own no-data notice. Pending identity has hover guidance and diagnostics; all/selected modes retain their existing behavior.
+- Upgrading to 2.0.0 refetches legacy case-folded quota/catalog/today caches and rebases the provider ledger and cumulative baseline together. Daily-total history is preserved; provider attribution retains the existing reconciliation algorithm.
 
 ### How fresh the limits are
 
@@ -65,11 +85,8 @@ See [the architecture document](docs/ARCHITECTURE.md) §16 for details.
 
 ## Multi-host
 
-Tern windows show panes from every connected host, and a plugin's window half runs on the window's machine.
-This plugin bridges the gap the documented way: each host's host half renders a tiny `sync` block containing
-that machine's data as text; the window reads every sync block it can see (`cx.session:read`) and maps panes to
-hosts (`cx.hosts:list`). The sync block opens automatically when you work on a remote host and is parked out of
-your tab bar immediately.
+Tern windows can show panes from multiple hosts. The plugin maps the focused pane to its data source and collects each source independently: local CLI execution, `wsl.exe` for WSL distributions, and SSH for remote hosts. Accounts, usage and statistics remain source-specific. Install/load the identity extension separately wherever omp runs; a Windows extension path is not automatically a usable remote path.
+Unmapped hosts never borrow local data. A WSL host name that cannot distinguish multiple installed distributions stays unavailable rather than selecting the first distribution.
 
 ## Development
 
@@ -79,6 +96,13 @@ tern plugin link ./dora-tern-omp-usage   # link your checkout
 tern plugin reload dora-tern-omp-usage   # after edits
 tern plugin types ./dora-tern-omp-usage  # regenerate tern.d.luau for luau-lsp
 ```
+Pure regression scripts can also run with the standalone Luau CLI:
+
+```sh
+luau tests/identity.luau
+luau tests/line.luau
+```
+
 
 `docs/` carries the (Chinese) requirements and architecture documents, the
 [implementation guide](docs/IMPLEMENTATION.md) and the [API usage reference](docs/API.md).

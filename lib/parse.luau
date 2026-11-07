@@ -31,17 +31,6 @@ local PROVIDER_LABELS = {
 -- Words in provider ids that name the product or plan, not the provider.
 local GENERIC = { api = true, cli = true, code = true, coding = true, plan = true, subscription = true, token = true }
 
--- Model-chip prefixes → provider, the fallback when the models catalog misses.
-local PREFIX_HINTS = {
-	anthropic = "anthropic", claude = "anthropic", opus = "anthropic", sonnet = "anthropic", haiku = "anthropic",
-	gpt = "openai-codex", codex = "openai-codex", ["o3"] = "openai-codex", ["o4"] = "openai-codex",
-	kimi = "kimi-code", ["k2"] = "kimi-code", ["k3"] = "kimi-code", moonshot = "kimi-code",
-	gemini = "google-gemini-cli",
-	minimax = "minimax-code", abab = "minimax-code",
-	qwen = "alibaba-token-plan", glm = "alibaba-token-plan",
-	zai = "zai-coding-plan", zcode = "zcode",
-}
-
 function M.provider_label(provider: any): string
 	local id = string.lower(tostring(provider or ""))
 	if id == "" then
@@ -57,20 +46,6 @@ function M.provider_label(provider: any): string
 		end
 	end
 	return id
-end
-
--- The provider a model chip's name suggests, via progressively shorter prefixes of its first
--- word ("Opus 5.5" → "opus" → anthropic; "K3.1 Pro" → "k3.1" → "k3" → kimi-code).
-function M.provider_hint(chip: any): string?
-	local text = string.lower(tostring(chip or ""))
-	local word = string.match(text, "^[^%s]+") or ""
-	for end_pos = #word, 1, -1 do
-		local hit = PREFIX_HINTS[string.sub(word, 1, end_pos)]
-		if hit then
-			return hit
-		end
-	end
-	return nil
 end
 
 -- A limit's window as { key, label, ms }, matched by omp's id or its length; unknown windows keep their id.
@@ -157,7 +132,7 @@ function M.report(report: any, now: number): (string, { any }, number)
 	if type(report) ~= "table" then
 		return "", {}, 0
 	end
-	local provider = string.lower(tostring(report.provider or ""))
+	local provider = tostring(report.provider or "")
 	local windows: { any } = {}
 	local seen: { [string]: any } = {}
 	for _, limit in type(report.limits) == "table" and report.limits or {} do
@@ -261,7 +236,7 @@ function M.usage(doc: any, now: number): any
 		if type(entries) ~= "table" then
 			continue
 		end
-		local id = string.lower(tostring(provider))
+		local id = tostring(provider)
 		local windows: { any } = {}
 		local seen_c: { [string]: boolean } = {}
 		for _, entry in entries do
@@ -314,8 +289,8 @@ function M.usage(doc: any, now: number): any
 	return { reports = reports, capacity = capacity }
 end
 
--- `omp models --json` (an object with a `models` list) → lookup tables from the chip name to a model:
--- byName (the chip shows the name), bySelector, and per provider the bare ids (for scope filtering).
+-- `omp models --json` → versioned indexes of exact displayed names, canonical selectors and bare ids.
+-- A displayed name can identify multiple provider/id pairs; never discard a same-name candidate.
 -- nil when the answer carries no model list.
 function M.catalog(doc: any): any
 	local list = nil
@@ -336,27 +311,33 @@ function M.catalog(doc: any): any
 		if type(model) ~= "table" then
 			continue
 		end
-		local provider = string.lower(tostring(model.provider or ""))
-		local id = string.lower(tostring(model.id or ""))
-		local name = tostring(model.name or "")
-		local selector = string.lower(tostring(model.selector or ""))
-		if provider == "" or (id == "" and name == "") then
+		local provider = if type(model.provider) == "string" then model.provider else ""
+		local id = if type(model.id) == "string" then model.id else ""
+		if provider == "" or id == "" then
 			continue
 		end
-		local entry = { provider = provider, id = id, name = name }
-		if name ~= "" and by_name[name] == nil then
-			by_name[name] = entry
+		local selector = provider .. "/" .. id
+		if by_selector[selector] ~= nil then
+			continue
 		end
-		if selector ~= "" then
-			by_selector[selector] = entry
+		local name = if type(model.name) == "string" and model.name ~= "" then model.name else id
+		local displayed = string.gsub(name, "^Claude ", "", 1)
+		local entry = { provider = provider, id = id, name = name, selector = selector }
+		local candidates = by_name[displayed]
+		if candidates == nil then
+			candidates = {}
+			by_name[displayed] = candidates
 		end
-		if id ~= "" then
-			local list = by_provider[provider] or {}
-			table.insert(list, id)
-			by_provider[provider] = list
+		table.insert(candidates, entry)
+		by_selector[selector] = entry
+		local ids = by_provider[provider]
+		if ids == nil then
+			ids = {}
+			by_provider[provider] = ids
 		end
+		table.insert(ids, id)
 	end
-	return { by_name = by_name, by_selector = by_selector, by_provider = by_provider }
+	return { version = 2, by_name = by_name, by_selector = by_selector, by_provider = by_provider }
 end
 
 -- `omp stats --json` → tokens and cost since `day_start_ms` (local midnight), all providers.
@@ -387,7 +368,7 @@ function M.by_model_totals(doc: any): { [string]: any }
 		if type(entry) ~= "table" or type(entry.provider) ~= "string" or entry.provider == "" then
 			continue
 		end
-		local p = string.lower(entry.provider)
+		local p = entry.provider
 		local slot = out[p] or { tokens = 0, cost = 0 }
 		out[p] = slot
 		if type(entry.totalInputTokens) == "number" then

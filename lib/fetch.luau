@@ -15,7 +15,17 @@ local WSL_DETECT_INTERVAL = 10 * 60 * 1000
 
 function M.kv_get(key: string): any
 	local ok, value = pcall(tern.kv.get, key)
-	return if ok then value else nil
+	if not ok then
+		return nil
+	end
+	local kind = string.match(key, "^([^@]+)@")
+	-- Legacy provider-keyed data was lowercased and may have merged distinct identities.
+	if kind == "usage" or kind == "models" or kind == "today" then
+		if type(value) ~= "table" or value.version ~= 2 then
+			return nil
+		end
+	end
+	return value
 end
 
 function M.kv_set(key: string, value: any)
@@ -190,12 +200,13 @@ local function handle(source: string, kind: string, doc: any)
 		local parsed = parse.usage(doc, now_ms())
 		-- A failed fetch keeps the last good data; the next poll retries.
 		if parsed then
-			store(source, "usage", { at = now_ms(), reports = parsed.reports, capacity = parsed.capacity })
+			store(source, "usage", { version = 2, at = now_ms(), reports = parsed.reports, capacity = parsed.capacity })
 		end
 	elseif kind == "models" then
 		local catalog = parse.catalog(doc)
 		if catalog then
-			store(source, "models", { at = now_ms(), by_name = catalog.by_name, by_selector = catalog.by_selector, by_provider = catalog.by_provider })
+			catalog.at = now_ms()
+			store(source, "models", catalog)
 		end
 	elseif kind == "stats" then
 		if type(doc) ~= "table" or type(doc.timeSeries) ~= "table" then
@@ -211,9 +222,14 @@ local function handle(source: string, kind: string, doc: any)
 		local cum = parse.by_model_totals(doc)
 		local prev_key = "by_model_prev@" .. source
 		local ledger_key = "provider_days@" .. source
-		local prev = M.kv_get(prev_key)
-		local ledger = M.kv_get(ledger_key)
-		ledger = if type(ledger) == "table" then ledger else {}
+		local prev_record = M.kv_get(prev_key)
+		local ledger_record = M.kv_get(ledger_key)
+		local compatible = type(prev_record) == "table" and prev_record.version == 2
+			and type(prev_record.by_provider) == "table" and type(ledger_record) == "table"
+			and ledger_record.version == 2 and type(ledger_record.days) == "table"
+		-- Rebase both sides together; old case-folded attribution cannot safely be split.
+		local prev = if compatible then prev_record.by_provider else nil
+		local ledger = if compatible then ledger_record.days else {}
 		local today_providers = if type(ledger[day]) == "table" then ledger[day] else {}
 		-- Incremental deltas: byModel is cumulative over the stats window, so the delta
 		-- against the last seen cumulative attributes new usage per provider.
@@ -274,9 +290,9 @@ local function handle(source: string, kind: string, doc: any)
 				ledger[k] = nil
 			end
 		end
-		M.kv_set(prev_key, cum)
-		M.kv_set(ledger_key, ledger)
-		store(source, "today", { at = now_ms(), tokens = tokens, cost = cost, day = day, by_provider = today_providers })
+		M.kv_set(prev_key, { version = 2, by_provider = cum })
+		M.kv_set(ledger_key, { version = 2, days = ledger })
+		store(source, "today", { version = 2, at = now_ms(), tokens = tokens, cost = cost, day = day, by_provider = today_providers })
 		record_day(source, tokens, cost)
 	end
 end

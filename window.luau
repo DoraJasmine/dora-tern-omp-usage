@@ -7,6 +7,7 @@ local settings_lib = require("./lib/settings")
 local line = require("./lib/line")
 local fetch = require("./lib/fetch")
 local update = require("./lib/update")
+local identity = require("./lib/identity")
 
 local SHEET = "usage-plus"
 -- Module state, declared early so every function below shares one scope.
@@ -16,72 +17,12 @@ local POLL_MS = 1000
 local WATCHDOG_MS = 10000
 local STALE_MS = 15 * 60 * 1000
 
-local FOCUS_ROLE = "omp.composer.focus"
-local MODEL_ROLE = "omp.composer.model"
-local NAME_SUFFIX = "/name"
-
--- ── the omp pane's surface tree ─────────────────────────────────────────────
-
--- The first node, depth first, that `test` accepts. Nodes carry `id`, `p` {role, spans[{t}]} and `c`
--- (children), as jmazzola/tern-plugin-omp-usage reads them.
-local function find_node(node: any, test: (any) -> boolean): any
-	if type(node) ~= "table" then
-		return nil
-	end
-	if test(node) then
-		return node
-	end
-	if type(node.c) == "table" then
-		for _, child in ipairs(node.c) do
-			local found = find_node(child, test)
-			if found then
-				return found
-			end
-		end
-	end
-	return nil
-end
-
-local function role_is(role: string): (any) -> boolean
-	return function(node: any): boolean
-		return type(node.p) == "table" and node.p.role == role
-	end
-end
-
-local function id_ends(suffix: string): (any) -> boolean
-	return function(node: any): boolean
-		return type(node.id) == "string" and string.sub(node.id, -#suffix) == suffix
-	end
-end
-
--- From a dock tree: the model chip's name (what the cache and the provider mapping key on) and whether a
--- subagent's transcript is being viewed.
-local function dock_chip(tree: any): (string?, boolean)
-	if type(tree) ~= "table" then
-		return nil, false
-	end
-	local function find(test: (any) -> boolean): any
-		return find_node(tree.main, test) or find_node(tree.dock, test)
-	end
-	local chip = find(role_is(MODEL_ROLE))
-	local name = if chip then find_node(chip, id_ends(NAME_SUFFIX)) else nil
-	local spans = if name and type(name.p) == "table" then name.p.spans else nil
-	local first = if type(spans) == "table" then spans[1] else nil
-	local text: string? = nil
-	if type(first) == "table" and type(first.t) == "string" then
-		local trimmed = string.match(first.t :: string, "^%s*(.-)%s*$")
-		if trimmed and trimmed ~= "" then
-			text = trimmed
-		end
-	end
-	return text, find(role_is(FOCUS_ROLE)) ~= nil
-end
-
-local function read_dock(cx: any, pane: number): (string?, boolean)
+-- Read the chip, bridge and subagent focus from the same pane snapshot.
+local function read_dock(cx: any, pane: number): any
 	local ok, tree = pcall(function()
-		return cx.session:surface(pane, { root = "dock" })
+		return cx.session:surface(pane, { root = "dock", nodes = 1000 })
 	end)
-	return dock_chip(if ok then tree else nil)
+	return identity.read_dock(if ok then tree else nil, tern.json.decode)
 end
 
 -- ── per-host data: one fetch source per host ────────────────────────────
@@ -92,7 +33,7 @@ end
 
 local pane_host_map: { [number]: string } = {}
 local local_host_name: string = ""
-local last_chip: string? = nil
+local last_selection: string? = nil
 local update_toasted_run = false
 
 -- Builds the pane -> host map from the window's host list, reports the connected
@@ -129,8 +70,9 @@ local function source_for_host(host_key: string, wsl_list: { string }?, remote_l
 	if host_key == "local" then
 		return "local"
 	end
-	if type(wsl_list) == "table" and #wsl_list > 0 then
-		return "wsl:" .. wsl_list[1]
+	if host_key == "wsl" or string.sub(host_key, -4) == "@wsl" then
+		-- The advertised host name doesn't identify a distro when several are installed.
+		return if type(wsl_list) == "table" and #wsl_list == 1 then "wsl:" .. wsl_list[1] else "?"
 	end
 	if type(remote_list) == "table" and table.find(remote_list, host_key) then
 		return "ssh:" .. host_key
@@ -145,13 +87,8 @@ local function data_for(pane: number?): (string, any, string)
 		else host_key
 	local source = source_for_host(host_key, cached.wsl_list, cached.remote_list)
 	if source == "?" then
-		-- a remote host with no fetchable source: limits fall back to the local accounts,
-		-- but the today row reads "data unavailable" instead of claiming local numbers
-		return host_key, {
-			usage = fetch.kv_get("usage@local"),
-			models = fetch.kv_get("models@local"),
-			today = nil,
-		}, label
+		-- Never attribute another host's accounts or model catalog to this pane.
+		return source, {}, label
 	end
 	return source, {
 		usage = fetch.kv_get("usage@" .. source),
@@ -236,7 +173,6 @@ local function providers_present(): { string }
 			end
 		end
 	end
-	collect(fetch.kv_get("usage")) -- legacy flat key
 	return present
 end
 
@@ -268,37 +204,41 @@ local function tick(cx: any?)
 		focused_agent = ok and type(info) == "table" and info.kind == "agent"
 	end
 	if not focused_agent then
+		last_selection = nil
 		install("")
 		return
 	end
 
-	local chip, _viewing = read_dock(cx, pane :: number)
-	local host_key, data, host_label = data_for(pane :: number)
-	-- A model switch redraws at once from the cached reports, then fetches fresh ones
-	-- for the focused source (jmazzola's "redraw, then fetch" pattern).
-	if chip ~= nil and chip ~= last_chip then
-		last_chip = chip
-		local src = source_for_host(host_key, cached.wsl_list, cached.remote_list)
-		if src ~= "?" then
-			fetch.maybe_fetch(src, "usage", true)
+	local dock = read_dock(cx, pane :: number)
+	local source, data, host_label = data_for(pane :: number)
+	local selection = identity.resolve(dock, data.models)
+	selection.viewing = dock.viewing
+	local selection_key = table.concat({
+		tostring(pane), source, selection.sessionId or "", selection.selector or "",
+		selection.status, selection.reason, dock.chip or "", tostring(dock.viewing),
+	}, "\0")
+	-- Same-name switches and pane/session changes must invalidate the old selection too.
+	if selection_key ~= last_selection then
+		last_selection = selection_key
+		if selection.status == "resolved" and source ~= "?" then
+			fetch.maybe_fetch(source, "usage", true)
 		end
 	end
 	local usage = data.usage
-	local models = data.models
 	local model = line.build(settings, {
 		usage = if type(usage) == "table" and type(usage.reports) == "table"
 			then usage
 			else { reports = {}, capacity = {} },
-		models = if type(models) == "table" and type(models.by_name) == "table" then models else nil,
-		chip = chip,
+		selection = selection,
+		models = if type(data.models) == "table" and data.models.version == 2 then data.models else nil,
 		today = if type(data.today) == "table" then data.today else nil,
 	}, now)
-	if #model.groups == 0 then
+	if #model.groups == 0 and model.notice == nil then
 		install("")
 		return
 	end
 	-- redraw the status bar when the shown host's data changed
-	local host_sig = host_key .. "/" .. tostring(if type(data.today) == "table" then data.today.at else nil) .. "/" .. tostring(data.sync_error or "")
+	local host_sig = source .. "/" .. tostring(if type(data.today) == "table" then data.today.at else nil) .. "/" .. tostring(data.sync_error or "")
 	if host_sig ~= cached.host_sig then
 		cached.host_sig = host_sig
 		tern.chrome.refresh()
@@ -748,18 +688,16 @@ tern.command({
 		local settings = settings_lib.load()
 		local L = labels.get(settings.language)
 		local pane = cx.session:focused()
-		local chip = nil
-		if pane then
-			chip = (read_dock(cx, pane))
-		end
+		refresh_cache()
+		refresh_host_map(cx)
+		local dock = if pane then read_dock(cx, pane) else identity.read_dock(nil, tern.json.decode)
 		local host_key = (pane and pane_host_map[pane]) or "local"
-		local source = source_for_host(host_key, cached.wsl_list, cached.remote_list)
-		local models = fetch.kv_get("models@" .. source)
-		local provider = nil
-		if chip and type(models) == "table" and type(models.by_name) == "table" then
-			local entry = models.by_name[chip :: string]
-			provider = if entry then entry.provider else parse.provider_hint(chip)
+		local source = "local"
+		local data: any = nil
+		if pane then
+			source, data = data_for(pane)
 		end
+		local selection = identity.resolve(dock, if data then data.models else fetch.kv_get("models@" .. source))
 		local function age(at: any): string
 			return if type(at) == "number" then line.compact_number(math.floor((now - at) / 1000)) .. "s ago" else "never"
 		end
@@ -772,7 +710,10 @@ tern.command({
 				age(if type(u) == "table" then u.at else nil),
 				age(if type(t) == "table" then t.at else nil)))
 		end
-		table.insert(parts, "chip " .. (chip or "-") .. " · provider " .. (provider or "?"))
+		table.insert(parts, "chip " .. (dock.chip or "-") .. " · selector " .. (selection.selector or "?"))
+		table.insert(parts, "identity " .. selection.status .. "/" .. selection.reason
+			.. " · bridge " .. dock.bridge_status .. " · source " .. (selection.source or "-")
+			.. " · session " .. (selection.sessionId or "-") .. " · child " .. tostring(dock.viewing))
 		local mem_ok, mem_kb = pcall(collectgarbage, "count")
 		local kv_ok, kv_text = pcall(tern.fs.read, tern.plugin.data .. "/kv.json", 1048576)
 		table.insert(parts, string.format("lua heap %s · kv.json %s",
