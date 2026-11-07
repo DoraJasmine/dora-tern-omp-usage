@@ -837,7 +837,7 @@ function M.card_rows(settings: any, model: any, L: any, today_text: string?, tod
 	if today_text then
 		table.insert(rows, { text = today_text, color = "var(--oc-soft)" })
 	end
-	-- today's per-provider breakdown, heaviest first
+	-- today's per-provider breakdown, heaviest first; label / tokens / cost padded into columns
 	local by_provider = if type(today) == "table" and type(today.by_provider) == "table" then today.by_provider else nil
 	if by_provider and next(by_provider) ~= nil then
 		local list: { any } = {}
@@ -849,21 +849,33 @@ function M.card_rows(settings: any, model: any, L: any, today_text: string?, tod
 		table.sort(list, function(a: any, b: any)
 			return a.tokens > b.tokens
 		end)
-		for i, item in list do
+		local shown: { any } = {}
+		for _, item in list do
 			if not spend_shown[item.provider] then
-				if i > 6 then
+				if #shown >= 6 then
 					break
 				end
-				table.insert(rows, {
-					text = CARD_INDENT
-						.. (parse.provider_label(item.provider) ~= "" and parse.provider_label(item.provider) or item.provider)
-						.. "  "
-						.. compact_number(item.tokens)
-						.. " · $"
-						.. string.format("%.2f", item.cost),
-					color = "var(--oc-mute)",
-				})
+				item.label = if parse.provider_label(item.provider) ~= "" then parse.provider_label(item.provider) else item.provider
+				item.token_text = compact_number(item.tokens)
+				table.insert(shown, item)
 			end
+		end
+		local label_w, token_w = 0, 0
+		for _, item in shown do
+			label_w = math.max(label_w, glyph_count(item.label :: string))
+			token_w = math.max(token_w, glyph_count(item.token_text :: string))
+		end
+		for _, item in shown do
+			table.insert(rows, {
+				text = CARD_INDENT
+					.. item.label
+					.. string.rep(" ", label_w - glyph_count(item.label :: string) + 2)
+					.. string.rep(" ", token_w - glyph_count(item.token_text :: string))
+					.. item.token_text
+					.. " · $"
+					.. string.format("%.2f", item.cost),
+				color = "var(--oc-mute)",
+			})
 		end
 	end
 	table.insert(rows, { text = L.settings_hint, color = "var(--oc-hint)", rule = true })
