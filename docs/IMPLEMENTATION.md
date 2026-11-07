@@ -22,7 +22,7 @@ window.luau          窗口端(window half,每个窗口的 UI 线程):
                        └ 设置菜单(pick/prompt)、命令、诊断
 lib/parse.luau       纯函数,无 tern 调用(可单测):omp JSON → 内部模型
 lib/fetch.luau       取数器:数据源(local / wsl:<发行版> / ssh:<主机>)、按源串行队列与锁
-lib/identity.luau    统一 dock 身份读取/解析(纯函数);主桥优先、缺桥唯一精确候选
+lib/identity.luau    统一 dock 身份读取/解析(纯函数);主桥优先,缺桥唯一精确候选直接解析、同名跨提供商显示全部候选
 omp/extensions/model-identity.js  可选主会话隐藏身份桥(omp ≥ 18.18.0,每个 omp 主机加载)
 lib/line.luau        线与卡片的模型组装 + 全部 CSS 生成
 lib/settings.luau    设置读写(tern.kv)+ 调色板预设
@@ -111,7 +111,7 @@ WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
   `TODAY 18.5M · $0.35`(纯 ASCII),卡片一行中文全写;该类组同时参与签名,数字变化才重写 CSS。
 - 当前模式统一使用 `identity.resolve` 结果:有效主桥给出 provider/id/sessionId;仅缺桥允许精确显示名目录回退。跨提供商同名候选全部显示并标注 `同名 ×N`,某家无数据只省略该项,不猜一家;同一提供商多候选、全部无数据或非法/不支持桥显示待确认。查看子代理不复用主桥。自身提供商无数据显示自身提示,不借用其他提供商。all/selected 不变。
 - 禁止 first-hit、前缀/id 子串启发及配置/消费证据排名。诊断使用同一解析结果;刷新键包括 pane、host、session、selector,不能只比较芯片文字。
-- 扩展使用 `ctx.models.current()` 实时 getter 与隐藏 role `dora.omp.model-identity` JSON v1;无公开 `model_changed` 事件依赖、无轮询、无写文件。README 给出每主机 Windows/WSL/SSH 加载方式。窗口每 100ms 读取身份,非固定延迟承诺;缺桥同名跨供应商显示全部候选,子代理重名仍待确认。烟测证据见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
+- 拓展使用 `ctx.models.current()` 实时 getter 与隐藏 role `dora.omp.model-identity` JSON v1;无公开 `model_changed` 事件依赖、无轮询、无写文件。README 给出每主机四种装载方式(`omp plugin install` 一行安装、发现目录、config.yml 注册、显式启动)。窗口每 100ms 读取身份,非固定延迟承诺;缺桥同名跨供应商显示全部候选,子代理重名仍待确认。烟测证据见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
 - 全部 CSS 在内容签名变化时整表重写(`tern.css("usage-plus", css)`),无状态残留;级联中的
   表名为 `plugin:local:dora-tern-omp-usage:usage-plus`。
 - **锚点选择器集中在 line.luau 顶部**(`METER`/`HOST_BASE`)。Tern 升级后若线条消失,先用诊断命令

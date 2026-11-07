@@ -30,9 +30,8 @@
 | `tern.on`(window_start / focus / budget) | 窗口 | 生命周期事件 | window |
 | `cx.session:focused / pane / panes` | 窗口 | 焦点判定、composer 树读取 | window |
 | `cx.session:surface` | 窗口 | 读 composer 芯片、子代理 focus 与隐藏身份节点 | window |
-| `cx.session:block_types` | 窗口 | 开仪表盘块前的目录门闸 | window |
 | `cx.hosts:list / current` | 窗口 | 主机列表、pane 归属与远程主机上报 | window |
-| `cx:new_block` | 窗口 | 打开仪表盘块 | window |
+| `cx:new_block` | 窗口 | 打开仪表盘块(nil 返回由调用方 toast 提示) | window |
 | `cx:toast / pick / prompt` | 窗口 | 设置菜单、提示 | window |
 | `tern.block.define` | 宿主 | dashboard 仪表盘块 | host |
 | `tern.pane.list` | 宿主 | 块存活检查 | host |
@@ -130,11 +129,11 @@ command`)或 nil。插件用它展示焦点窗格所属主机的当日 token 与
 
 桥由仓库 `omp/extensions/model-identity.js` 提供,要求 omp ≥ 18.18.0,通过 `belowEditor` 隐藏原生 widget 和实时 `ctx.models.current()` getter,不依赖公开模型变更事件、不轮询、不写文件。需在每个 omp 主机显式加载,Windows/WSL/SSH 绝对路径示例见 README。
 
-### cx.session:block_types()
+### cx:new_block(kind, args?, how?, opts?)
 
-返回当前主机上可打开的块类型目录(原生 + 各 Ready 插件)。打开仪表盘块之前以此做门闸:
-目录中出现目标类型之前绝不调用 `cx:new_block`,否则 Tern 会把
-"no block type ... on this host" 直接打印到窗格里(启动竞态实测踩过)。
+在窗口的**当前主机**上打开一个插件块,目录中没有该类型时返回 nil(不弹错,由调用方决定)。
+插件用它打开仪表盘块,并对 nil 返回 toast 提示;仪表盘命令均由用户触发,启动竞态由此规避
+(早期版本曾依赖 `cx.session:block_types()` 做目录门闸,现不再使用)。
 
 ### cx.hosts:list / current
 
@@ -145,11 +144,6 @@ sessions、panes`)。插件用它完成三件事:
 2. 记录本机的显示名(卡片今日行的标签);
 3. 把**已连接的远程主机**列表上报到 kv(`remote_hosts`),供宿主端的取数服务为每台主机
    建立数据源(WSL 主机走 wsl.exe 穿透,ssh 主机走 ssh)。
-
-### cx:new_block(kind, args?, how?, opts?)
-
-在窗口的**当前主机**上打开一个插件块,目录中没有该类型时返回 nil(不弹错,由调用方决定)。
-插件用它打开仪表盘块;开块前配合 `block_types()` 门闸使用,避免启动竞态。
 
 ## 4. 事件
 
@@ -190,7 +184,7 @@ sessions、panes`)。插件用它完成三件事:
 | `omp usage --json` | 各提供商限额(reports + capacity) | `usage@<源>` → 线/卡片 |
 | `omp usage invalidate` | 手动刷新前清除 omp 缓存 | fetch(force 时) |
 | `omp usage --history --json --days 7` | 逐小时限额快照 | 仪表盘 |
-| `omp models --json` | 模型目录(v2 候选列表、selector/提供商索引、价格表) | `models@<源>` |
+| `omp models --json` | 模型目录(v2 候选列表、selector/提供商索引) | `models@<源>` |
 | `omp stats --json` | timeSeries(当日)+ byModel(按提供商分解) | `today@<源>` / 账本 |
 
 **远程执行方式**:本机源直接运行;WSL 源经 `wsl.exe -d <发行版> -- sh -lc 'omp …'` 穿透;

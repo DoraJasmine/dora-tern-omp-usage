@@ -11,7 +11,7 @@
 
 ## 1. 设计原则
 
-1. **CLI 采集与可选正式身份桥分离** —— host 轮询负责账户额度/统计;主会话精确身份由随仓库分发的 omp 扩展提供。Tern 一行安装不自动修改 omp 配置,缺桥时仅唯一精确目录候选可解析,不保证重名模型精度。
+1. **CLI 采集与可选正式身份桥分离** —— host 轮询负责账户额度/统计;主会话精确身份由随仓库分发的 omp 拓展提供。Tern 一行安装不自动修改 omp 配置;缺桥且同名跨提供商时并列显示全部候选(标注 `同名 ×N`),不猜一家,不保证重名模型精度。
 2. **host 生产,window 消费** —— 数据采集全部在 host 半(守护进程,常驻、跨窗口唯一),写入 `tern.kv`;window 半只读 kv + 读 UI 树 + 渲染。多窗口零重复轮询。
 3. **提供商无关** —— 不白名单任何提供商;一切窗口/标签/颜色从报告数据推导,新提供商零代码接入。Kimi/Codex 的特殊形态(重复窗口、capacity 聚合)走归一化规则而非特判分支。
 4. **渲染走 CSS,数据走文本** —— 沿用 jmazzola 验证过的方案:用量线是上下文计量器元素的 `::before` 的 `content` 文本,配色/动画全在 CSS;不触碰 omp 自身 DOM 结构,只在既有的稳定 role/id 上锚定。
@@ -24,14 +24,14 @@
 │                                                                  │
 │  Host 半(守护进程,唯一)              Window 半(每窗口一个)      │
 │  ┌─────────────────────────┐          ┌─────────────────────────┐ │
-│  │ poller.luau             │          │ watcher.luau            │ │
+│  │ host.luau               │          │ window.luau             │ │
 │  │  ├ usage: omp usage     │  tern.kv │  ├ 100ms: 焦点 & composer│ │
 │  │  │        --json (90s)  │ ────────▶│  │   树 → 模型芯片名     │ │
 │  │  ├ models: omp models   │ (usage/  │  ├ build: 组装 Line 模型 │ │
 │  │  │        --json (10m)  │  models/ │  ├ render: tern.css 注入 │ │
 │  │  └ stats: omp stats     │  today/  │  │   线 + 悬停卡片        │ │
 │  │       --json (5m)       │  days)   │  ├ chrome.status 今日段  │ │
-│  │ dashboard block         │          │  ├ settings 面板(canvas)│ │
+│  │ dashboard block         │          │  ├ 设置菜单(pick)         │ │
 │  │ (omp usage --history)   │          │  └ palette 菜单/命令      │ │
 │  └─────────────────────────┘          └─────────────────────────┘ │
 │                                       │ CSS sheet: usage/panel   │
@@ -45,14 +45,14 @@
 
 ## 3. 关键决策记录(ADR)
 
-### D1 数据获取:host 半轮询 CLI,身份由轻量扩展提供
+### D1 数据获取:host 半轮询 CLI,身份由轻量拓展提供
 
 额度、目录、统计仍由 host 半按源串行轮询 omp CLI,不会改成每会话重复采集。可选 `omp/extensions/model-identity.js` 只在主 TUI 会话通过隐藏原生 widget 提供实时身份,无轮询、无文件写入。要求 omp ≥ 18.18.0,需在每个运行 omp 的主机加载;路径与配置方式见 README。插件绝不自动修改用户配置。
 
 ### D2 当前提供商识别:统一身份解析器
 
 1. 每约 100 ms 读取聚焦窗格 dock,由 `lib/identity.luau` 提取芯片、子代理 focus 标志和 role `dora.omp.model-identity` 的 JSON。
-2. v1 身份字段为 `sessionId, scope: main, provider, id`。扩展使用 `ctx.models.current()` 实时 getter,不依赖公开 `model_changed` 事件。有效主桥确定 selector;目录对应项与芯片不符时待确认。
+2. v1 身份字段为 `sessionId, scope: main, provider, id`。拓展使用 `ctx.models.current()` 实时 getter,不依赖公开 `model_changed` 事件。有效主桥确定 selector;目录对应项与芯片不符时待确认。
 3. 仅桥缺失时允许 v2 目录回退。`by_name` 保存候选列表，不丢同名项；唯一精确显示名候选解析。跨提供商多候选全部保留并交给界面，不做 first-hit、id 子串、前缀启发或配置/额度/消费排序。非法/不支持桥阻止回退。
 4. 无桥且同名跨提供商时，当前模式同时显示全部候选并标注 `同名 ×N`；某家无数据只省略该项，切换同名模型时仍并列。同一提供商多候选、全部无数据、非法/不支持桥及查看子代理时显示待确认及悬停帮助。解析到自身提供商但没有数据只显示自身提示，绝不退回另一家。all/selected 保持原行为。
 5. 诊断复用相同解析结果;模型刷新身份键包括 pane、host、session、selector。先画对应缓存,再请求后台刷新。100ms 是读取周期而非硬时延保证;具体烟测与限制见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
@@ -71,11 +71,10 @@
 - 逐日 totals 写 kv `days`(`YYYY-MM-DD → {tokens, cost}`,保留 62 天)——stats 只能回溯 ~1 天,周/月统计靠自存。
 - 状态栏:`tern.chrome.status` 注册,agent 窗格聚焦时返回 `🔥 N tokens`、`💰 $N` 两段,`command` 指向打开仪表盘的隐藏命令。
 
-### D5 设置:canvas 面板 + kv,双入口
+### D5 设置:pick 菜单 + kv,多入口
 
-- 面板:`cx.canvas:open({view, dock, how="beside"})`,`tern.ui` 节点搭建(分段/开关/按钮/色点/预览线);交互经 `tern.on("canvas_action")` 回调(`mode/toggle/up/down/top/bottom/named/preset/custom/reset`)。
-- 菜单:`cx:pick` 多级列表(等价功能,纯键盘);`tern.command` 注册面板/菜单命令,面板命令带默认键位 `ctrl+alt+u`。
-- 存取:唯一入口 settings 模块(校验 + `tern.kv`);window 半每 1s 重读快照,本窗口设置事件强制更新。
+- 菜单:`cx:pick` 多级列表(显示模式 / 选择·排序·配色 / 刷新 / 间隔 / 语言 / 状态栏开关),`tern.command` 注册命令,设置命令带默认键位 `ctrl+alt+u`;状态栏 `usage` 段与卡片尾行是额外入口。canvas 设置面板(`cx.canvas:open` + `tern.on("canvas_action")`)列为后续里程碑,尚未实现。
+- 存取:唯一入口 settings 模块(校验 + `tern.kv`);window 半每 1s 重读快照,设置变更即强制重绘。
 
 ### D6 插件内 i18n(增强)
 
@@ -106,8 +105,8 @@ dora-tern-omp-usage/
 schema = 1
 id = "dora-tern-omp-usage"
 name = "Dora omp Usage"
-version = "0.1.0"
-description = "Usage line above the omp composer (any provider omp reports: Kimi, Codex, Claude, …), today's tokens & cost, dashboard, settings panel."
+version = "2.0.0"
+description = "Provider-aware omp usage, today's tokens and API-price cost, dashboard and settings. Optional companion extension provides exact main-session model identity."
 icon = "gauge"
 host = "host.luau"
 window = "window.luau"
@@ -119,26 +118,25 @@ title = "Dora omp Usage"
 
 ## 5. 数据流与调度
 
-### 5.1 host 轮询器(poller.luau)
+### 5.1 host 取数服务(host.luau + lib/fetch.luau)
 
 ```
-每项任务 = { name, interval_ms, run }
-队列:同一时刻最多 1 个 omp 进程在跑(串行),完成后再取下一个到期任务
+每源串行队列 + kv 锁(4s 窗口),同一时刻每源最多 1 个 omp 进程
 任务:
-  usage   每 settings.usage_interval(默认 90s,失败退避×2,上限 10min)
-          `omp usage --json` → parse.reports() → kv.usage = { at, reports, fail }
-  models  每 10min(失败退避)
-          `omp models --json` → parse.catalog() → kv.models = { version=2, at, by_name=候选列表, by_selector, by_provider }
+  usage   每 settings.usage_interval(默认 90s);失败保留上次数据,下个周期重试
+          `omp usage --json` → parse.usage() → kv.usage@<源> = { version=2, at, reports, capacity }
+  models  每 10min
+          `omp models --json` → parse.catalog() → kv.models@<源> = { version=2, at, by_name=候选列表, by_selector, by_provider }
   stats   每 5min
-          `omp stats --json` → parse.timeseries() → 今日和 → kv.today / kv.days(逐日合并)
-手动刷新(命令/点击/模型切换):把 usage 提到队首,并带 `omp usage invalidate` 前置一次
+          `omp stats --json` → parse.today() / parse.by_model_totals() → 今日和与按提供商账本 → kv.today@<源> / days@<源>
+手动刷新(命令/点击):前置一次 `omp usage invalidate` 后立即取数;模型切换只写 refresh_usage 请求,宿主每 250ms 接收
 ```
 
-- 进程调用统一 `tern.process.run(argv, {timeout_ms=15000}, cb)`,回调里只做解析与 kv 写(<50ms)。
-- `os.getenv` 定位 omp:环境变量 `OMP_USAGE_PLUS_BIN` → 托管路径(`%LOCALAPPDATA%\Tern\omp\bin\omp.exe` 等,joaodutra88 同款探测)→ PATH 里的 `omp`。
+- 进程调用统一 `tern.process.run(argv, {timeout_ms=20000}, cb)`,回调里只做解析与 kv 写(<50ms)。
+- `tern.getenv` 定位 omp:环境变量 `OMP_USAGE_PLUS_BIN` → 托管路径(`%LOCALAPPDATA%\Tern\omp\bin\omp.exe` 等,joaodutra88 同款探测)→ PATH 里的 `omp`。
 - kv 结构带 `at`(epoch ms),window 据此显示陈旧程度。
 
-### 5.2 window 渲染循环(watcher + render)
+### 5.2 window 渲染循环(window.luau)
 
 ```
 tern.timer(100) tick:
@@ -156,7 +154,6 @@ reload 后由加载期 100ms 定时器恢复;常规后台到期检查仍为 5s
 性能要点(全部来自两项目实测教训):
 - dock 身份每 100ms 检查;设置、主机映射及 kv 数据每 1s 更新,避免在快路径重复读数据和生成 CSS。
 - kv 读取包 `pcall`;切换先画缓存再写刷新请求,窗口快路径不启动 CLI 进程。
-- 动画计时器用 `tern.timer(1450, clear)` 一次性清理。
 
 ### 5.3 状态栏与仪表盘
 
@@ -173,14 +170,14 @@ Report = {
   provider = "kimi-code",          -- 原始 id
   label    = "Kimi",               -- 短标签(映射表/启发)
   windows  = { Window... },        -- 归一化、去重、排序后
-  credits  = 3,                    -- 可用 saved resets 数
-  resets   = { { expiresAt=ms, count=n }... },  -- 7d 的 saved resets 明细
+  credits  = 3,                    -- 可用 saved resets 数(resetCredits 汇总)
 }
 Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
            label="5h",            -- 显示标签
-           ms=number|inf,         -- 排序用
+           ms=number,             -- 排序用;未知长度窗口为 MAX_MS=1e15(kv 不能存 Infinity)
            left=0..1,             -- remainingFraction 或 capacity 比例
-           resetAt=ms?,           -- 重置时刻
+           reset_at=ms?,          -- 重置时刻
+           saved=n?, expires_at=ms?,  -- 7d 的已存重置数与最近到期(kv 存于 7d 窗口)
            accounts=n? }          -- Codex capacity 时的账号数
 ```
 
@@ -206,46 +203,45 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 
 设置默认值与校验集中在 `settings.luau`。升级时拒读旧小写化的 usage/models/today 记录,供应商累计基线和账本成对重建;保留每日总量历史,沿用原有分摊对账算式。
 
-## 7. 渲染规格(render.luau)
+## 7. 渲染规格(lib/line.luau)
 
 沿用并简化 jmazzola 的 CSS 方案(无状态栏事实隐藏,少一半复杂度):
 
 - **布局**:线为 meter `::before`,13px 高、单行 mono;`<label> <bar> <pct>% <reset>` 以 NBSP 连接,窗口间用 `·`;放不下整项 NBSP 换行到裁剪的第二行(FR-1.6)。
 - **无窗口组**:不画条与百分比,只有 `label · TODAY <tokens> · $<cost>`(纯 ASCII、`compact_number` 缩写);卡片里写全「今日 N tokens · $X」。分组间仍用 `·` 连接。
-- **条形**:`━`×8(紧凑 6),`background-clip:text` 一层渐变按字符区间着色:已填部分 = 提供商色、未填 = 15% 透明提供商色;`::after` 为亮端 tip(radial 渐变)。
-- **配色**:每提供商 `{label, bar1, bar2?}`;预设:Claude clay `#d97757`、Codex graphite→blue、OpenAI green、**Kimi green**、Gemini blue→white、MiniMax red→pink、Qwen purple…,未知提供商 = theme accent;自定义 spec=`#hex` 或 `#hex, #hex`;≤25% 全线该窗口变 amber、≤10% 变 red(独立于提供商色)。
-- **comet**:窗口 left 值变化 → 该窗口区间以 `image()` 层做 1.4s 位移动画(降=提供商色,升=--ok 绿);Reduce Motion(Tern 或系统)时输出 STILL 版本,无任何动画。
-- **悬停卡片**:hover 目标为附件 chips 行;卡片逐行 = 窗口名 + 计量器 + 剩余 + `resets in Xm · HH:MM` + saved reset 到期(`expires Thu Oct 22, 12:00 PM · in 10d 14h`,zh-CN 用本地化格式);尾行 = 今日 token/费用 + `settings · <chord>`(chord 从 `cx.actions:keys()` 读,缓存 30s)。
+- **条形**:`━`×8(紧凑 6),`background-clip:text` 一层渐变按字符区间着色:已填部分 = 提供商色渐入、未填 = 轨道色;`::after` 为亮端 tip(radial 渐变)。线上文本保持 ASCII(中文仅出现在卡片),否则 CJK 字宽会破坏按字符推算的条形对齐。
+- **配色**:每提供商 `{a, b?}`;预设:Claude clay、Codex graphite→blue、OpenAI green、**Kimi green**、Gemini blue→white、MiniMax red→pink、Qwen purple…,未知提供商 = theme accent;自定义 spec=`#hex` 或 `#hex, #hex`;≤25% 该窗口变 amber、≤10% 变 red(独立于提供商色)。
+- **动画**:卡片入场 `usage-plus-card` 0.28s;`prefers-reduced-motion: reduce` 下全部动画/过渡禁用。
+- **悬停卡片**:hover 目标为附件 chips 行;卡片逐行 = 窗口名 + 计量器 + 剩余 + `resets in Xm` + saved reset 到期(`expires in 10d 14h`,本地化);尾行 = 今日 token/费用 + `settings · Ctrl+Alt+U` 提示。
 - **清除**:卸载/停用即消失(CSS sheet 随插件销毁),无 DOM 残留。
 
-## 8. 设置面板(panel.luau)
+## 8. 设置菜单(window.luau)
 
-- 打开:`cx.canvas:open({ title, about, view, dock, how="beside" })`;已开则 `cx.layout:focus`。
-- 分区:Line 预览(用 kv 最新数据渲染假线)→ Show(三选一)→ Providers(行 = 开关 + ↑/↓/置顶)→ Colors(每提供商一排色点:预设×6、Theme accent、Custom…、Reset)→ Meters(amber/red 阈值)→ Polling(两个间隔)→ Status bar(两开关)→ Alerts → Language。
-- 交互:`tern.on("canvas_action", ev)` 按 `ev.act/ev.value` 分发到 settings 模块,然后 `after_change()`:重载设置、立即重渲染线与面板;Custom 颜色走 `cx:prompt`(文本输入 hex)。
-- 面板状态签名(state.sig)去重:数据没变不重绘;`pane_closed` / `canvas_action` 维护 panel_pane;reload 后 `find_panel()` 找回 Tern 保留的面板。
+- 打开:`tern.command` 注册 `panel`(键位 `ctrl+alt+u`)与 `settings`;另有状态栏 `usage` 段与卡片尾行提示两个入口。
+- 菜单:`cx:pick` 单级列表(group 分组)→ 按项进入子级:Providers 的选择(`cx:pick` toggle 多选)、排序(选提供商 → 上移/下移/置顶/置底)、配色(预设/命名/自定义 `cx:prompt` hex/重置),以及两个刷新间隔的 `cx:prompt`(校验同 settings.load)。
+- 交互:回调按 `item.pick` 分发到 settings 模块写入,然后 `after_change()`:强制 tick 重绘线与状态栏。canvas 设置面板(`cx.canvas:open` + `canvas_action`)为后续里程碑,尚未实现。
 
 ## 9. 错误处理与降级矩阵
 
 | 情形 | 表现 |
 |---|---|
-| omp CLI 不存在 / 启动失败 | kv.usage 不更新;线显示上次数据,卡片标注"数据 X 分钟前";连续 3 次失败线变为灰色省略号,不再弹任何 toast |
+| omp CLI 不存在 / 启动失败 | kv.usage 不更新;线显示上次数据;超过 15 分钟未更新时状态栏出现 ⚠ 段(点击打开诊断),不弹错误刷屏 |
 | `omp usage --json` 解析失败 / reports 空 | 保留可用旧数据并说明陈旧;当前模式自身无数据仍显示自身提示,不以其他提供商替代 |
 | 当前提供商无额度或今日消费 | `current` 显示自身提供商无数据提示,不切换其他提供商 |
 | 身份缺失/歧义/非法/不支持 | 当前模式待确认及悬停说明,不复用旧芯片身份;非 omp 窗格清除线 |
 | meter 锚点缺失(Tern 升级破选择器) | 线与卡片整体静默不渲染;状态栏今日段不受影响;README 注明需适配版本 |
 | `omp stats` 为空 / 未同步 | 今日段隐藏;仪表盘费用卡显示空态文案 |
 | kv 读写异常 | pcall 吞掉,按默认值处理 |
-| 轮询超时(15s) | 视为失败,走退避;串行队列不被卡死(下个任务照常) |
+| 轮询超时(20s) | 视为失败,保留旧数据等待下个周期;串行队列不被卡死(下个任务照常) |
 
 ## 10. 性能预算
 
 | 项 | 预算 | 依据 |
 |---|---|---|
 | 定时器回调 | ≤ 50 ms | Tern 超时即停用插件全部定时器(joaodutra88 注释) |
-| 单 omp 进程 | 并发 = 1;超时 15 s | Windows 起进程开销大;usage CLI 实测 ~0.6 s |
+| 单 omp 进程 | 并发 = 1(每源);超时 20 s | Windows 起进程开销大;usage CLI 实测 ~0.6 s |
 | CSS 重建 | 仅签名变化时;本体 < 10 ms | jmazzola 实测量级 |
-| dock 树读取 | 每秒 1 次,~40 节点 | jmazzola 同配置 |
+| dock 树读取 | 每 100 ms(身份);~40 节点 | 2.0.0 起身份检测从 1 s 提到 100 ms |
 | kv 体积 | usage < 32 KB、days < 8 KB | 序列化上限,超限截断旧数据 |
 
 ## 11. 兼容性与风险
@@ -257,16 +253,16 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 | 平台 | 既有 CLI 采集支持 Windows/WSL/SSH | 身份桥已验证 Windows/WSL picker 切换、Windows 双 pane 隔离与新会话;SSH 无可用测试主机 |
 
 **风险控制**:
-- R1(选择器漂移):`render.luau` 顶部集中全部选择器常量并注明来源版本;启动探测失败 → 降级开关(线关、状态栏照常)。
+- R1(选择器漂移):`lib/line.luau` 顶部集中全部选择器常量(`METER`/`HOST_BASE`);meter 锚点缺失时线整体不渲染,状态栏照常。
 - R2(CLI schema):parse 层每字段 `type()` 防御;未知窗口/提供商显示而非丢弃。
-- R3(模型映射精度):主桥提供正式身份;仅缺桥允许唯一精确候选,歧义/非法/不支持时待确认,禁止其他提供商替代。
-- R4(限流):默认 90 s + 指数退避;`invalidate` 只在手动刷新;设置页提示调低间隔的风险。
+- R3(模型映射精度):主桥提供正式身份;缺桥时唯一精确候选直接解析,同名跨提供商并列显示全部候选(标注 `同名 ×N`),同提供商多候选、非法/不支持桥及子代理歧义待确认,禁止其他提供商替代。
+- R4(限流):默认 90 s 固定间隔,失败保留旧数据;`invalidate` 只在手动刷新;设置可调低间隔,架构文档 §16 说明其收益边界。
 
 ## 12. 测试与发布
 
-- **单测**(无 tern 依赖的纯函数):parse.luau(kimi 去重、capacity 聚合、scope 过滤、窗口归一)、model.luau(模式/排序/签名)、settings.luau(校验)。可在本地 luau 或 CI 中跑(`scripts/check.py` 用 luau-analyze 做类型检查,测试文件仿 joaodutra88 `tests/history_test.luau`)。
+- **回归**:无 tern 依赖的纯函数场景集中在 `tests/identity.luau` 与 `tests/line.luau`(身份解析、同名候选、Kimi 去重、capacity、排序、签名),`luau tests/identity.luau` / `luau tests/line.luau` 直接运行,输出一行 PASS。
 - **手测清单**:验收标准(需求文档 §6)逐条;三形态报告 fixture(kimi/codex/claude)注入 kv 验证渲染。
-- **发布**:GitHub 仓库 → `tern plugin install github.com/<you>/tern-dora-tern-omp-usage`;tag + CHANGELOG;P2 更新检查走 GitHub releases API。
+- **发布**:GitHub 仓库 → `tern plugin install github.com/DoraJasmine/dora-tern-omp-usage`;tag + CHANGELOG;更新检查走 releases.atom,状态栏一键更新。
 - **文档**:README(英/中双语,安装 30 秒动画 GIF)+ 本目录两份文档随仓库维护。
 
 ## 13. 里程碑
@@ -291,7 +287,7 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 - **kv 不跨主机同步**:"Both halves of a plugin, and the window half in every window, share this folder and one `tern.kv` store"(同一台机器内共享一个 kv.json);**"Each machine reads its own settings; nothing syncs between hosts."**
 - kv 本身仍不跨主机同步,本插件不尝试从窗口直接读取远端 kv。当前 fetch 服务按 `local / wsl:<发行版> / ssh:<主机>` 分源执行 CLI,窗口使用 pane 所属 Tern 主机选择数据。
 - 无法映射的主机不借用本机账户;`@wsl` 名称不能区分多个已安装发行版时返回不可用。源码不会把任意 SSH 主机映射到首个 WSL 发行版。
-- 模型身份由当前 pane 的隐藏 TSP 节点随终端输出传输,不是共享文件或跨机 kv。每个实际运行 omp 的主机需要独立加载身份扩展。
+- 模型身份由当前 pane 的隐藏原生节点随终端输出传输,不是共享文件或跨机 kv。每个实际运行 omp 的主机需要独立加载身份拓展。
 
 ## 15. 附录:参考项目 API 速查(实测自源码)
 
@@ -310,6 +306,7 @@ Window = { key="5h"|"1d"|"7d"|"mo"|"<span>"|"<id>",
 | `cx.session:surface(pane,{root}) / :panes() / :focused() / :pane(n)` | 读窗格 UI 树/信息 | jmazzola |
 | `cx.canvas:open/set/list` + `tern.on("canvas_action")` | canvas 设置面板 | jmazzola |
 | `cx:pick / cx:prompt / cx:toast / cx:new_block / cx.layout:focus` | 交互原语 | 两者 |
+| `tern.block.define(id, {init,title,view,key})` | host block(仪表盘) | joaodutra88 |
 
 ## 16. 数据新鲜度:插件与 omp 的双层更新机制
 
@@ -334,7 +331,7 @@ omp 的额度数据不按固定周期刷新,而是"被请求时取数"的拉模�
 两层机制是"插件调度、omp 执行"的关系:插件决定询问频率,omp 决定上游访问频率。由此有三点推论:
 
 1. **插件的 usage 间隔是"询问间隔",不是"数据新鲜度上限"。** 若询问时 omp 缓存未过期,返回的是缓存中的旧报告;插件 kv 中的 `at` 记录的是取回时刻而非数据生成时刻,故陈旧判定存在乐观偏差。缩短间隔短于 omp 缓存 TTL(~5 min)对新鲜度无增益。
-2. **90 s 的默认间隔已接近有效下限。** 相对 omp 的 5 分钟缓存 TTL,90 s 保证缓存过期后约一个周期内即被插件捞起,且给手动 invalidate 留出空间;压至 60 s 仅在缓存恰好过期的窗口内略微提前,同时增加进程开销与上游限流风险(omp 自身在 429 后退避 ≥60 s)。官方第三方扩展(pi-usage-limit-tracker)采用 5 分钟轮询,可作佐证。
+2. **90 s 的默认间隔已接近有效下限。** 相对 omp 的 5 分钟缓存 TTL,90 s 保证缓存过期后约一个周期内即被插件捞起,且给手动 invalidate 留出空间;压至 60 s 仅在缓存恰好过期的窗口内略微提前,同时增加进程开销与上游限流风险(omp 自身在 429 后退避 ≥60 s)。官方第三方拓展(pi-usage-limit-tracker)采用 5 分钟轮询,可作佐证。
 3. **stats 无上游限流问题。** `omp stats --json` 读本地统计库,300 s 默认间隔纯属开销权衡,可安全调低。
 
 ### 16.4 缓存 TTL 不可配置,唯一接口为 `omp usage invalidate`
@@ -348,4 +345,3 @@ omp 的额度缓存 TTL 为硬编码常量 `USAGE_REPORT_TTL_MS = 5 * 60_000`(`p
 ### 16.5 待办:以 `fetchedAt` 校正陈旧判定
 
 omp 输出的每份报告携带 `fetchedAt`。插件解析时若优先采用该字段(缺失时回退本地时间),kv `at` 即反映数据的真实生成时刻,陈旧标记与 16.3.1 的乐观偏差随之消除。已列入待办。
-| `tern.block.define(id, {init,title,view,key})` | host block(仪表盘) | joaodutra88 |

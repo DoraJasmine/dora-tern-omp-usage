@@ -18,12 +18,12 @@
 | | [jmazzola/tern-plugin-omp-usage](https://github.com/jmazzola/tern-plugin-omp-usage) | [joaodutra88/tern-omp-usage](https://github.com/joaodutra88/tern-omp-usage) |
 |---|---|---|
 | **UI** | ✅ 用量线显示在 omp composer 上下文栏正上方,细条计量器、悬停详情卡片、换窗格跟随当前模型 | ❌ 仅状态栏圆点风格,信息密度低 |
-| **安装** | ❌ 5 步手动配置:clone → `tern plugin link` → 手改 `~/.omp/agent/config.yml` 注册 omp 扩展 → 配置 `statusLine.showHookStatus` → 重启 omp | ✅ 一行:`tern plugin install github.com/joaodutra88/tern-omp-usage` |
+| **安装** | ❌ 5 步手动配置:clone → `tern plugin link` → 手改 `~/.omp/agent/config.yml` 注册 omp 拓展 → 配置 `statusLine.showHookStatus` → 重启 omp | ✅ 一行:`tern plugin install github.com/joaodutra88/tern-omp-usage` |
 | **提供商** | ✅ 任意 `omp usage` 报告的提供商(Claude、Codex、Kimi、Gemini、MiniMax…),跟随当前模型自动切换 | ❌ 硬编码只支持 Claude + Codex,**不支持 Kimi** |
 | **今日统计** | ❌ 无 | ✅ 今日 token + API 价格费用(`omp stats`),7 天仪表盘 |
 | **设置** | ✅ 图形化设置面板(canvas pane):显示模式、提供商开关与排序、逐提供商配色 | ⚠️ 仅命令面板文本输入式设置 |
 
-**本机实测踩坑**(2026-10-31,omp 18.14.1 / Windows):手动注册扩展时路径极易出错——
+**本机实测踩坑**(2026-10-31,omp 18.14.1 / Windows):手动注册拓展时路径极易出错——
 `~/.omp/agent/config.yml` 中被写成了 `D:/tern-plugin-omp-usageomp/extensions/usage-remaining.js`
 (目录名与 `omp/` 拼接时丢了分隔符),omp 每次启动报 "Failed to load extension",且插件完全失效。
 这正是"配置太多、容易错"的直接证据。
@@ -36,7 +36,7 @@
 
 ### 目标(G)
 
-- **G1 安装分层**:`tern plugin install github.com/DoraJasmine/dora-tern-omp-usage` 安装 Tern 插件;精确主会话身份需在每个 omp 主机加载随仓库提供的可选扩展,插件不自动修改用户配置。
+- **G1 安装分层**:`tern plugin install github.com/DoraJasmine/dora-tern-omp-usage` 安装 Tern 插件;精确主会话身份需在每个 omp 主机加载随仓库提供的可选拓展,插件不自动修改用户配置。
 - **G2 用量线 UI**:复刻 jmazzola 的体验——用量线显示在聚焦 omp 窗格 composer 上下文栏(上下文发丝线)正上方,细条计量器、提供商配色、悬停详情卡片。
 - **G3 提供商无关**:显示 omp 报告的**任何**提供商(Kimi、Codex、Claude、Gemini…),新提供商零代码接入;内置 Kimi/Codex/Claude 等配色预设。
 - **G4 当前模型跟随**:正式主桥提供实时 provider/id,通常随约 1 秒 surface 读取更新,非硬时延保证。子代理仅唯一精确目录候选可解析,歧义则待确认。
@@ -47,7 +47,7 @@
 ### 非目标(Non-goals)
 
 - N1 不做 iOS/Web 端适配(仅桌面 Tern)。
-- N2 不自动修改 omp 配置;可选身份扩展由用户在各 omp 主机显式加载,无轮询/文件写入。
+- N2 不自动修改 omp 配置;可选身份拓展由用户在各 omp 主机显式加载,无轮询/文件写入。
 - N3 不做用量预测之外的数据分析(工作周预算等 joaodutra88 特色功能列为 P2,可选)。
 - N4 不接入 omp 之外的凭据或网络服务(更新检查的 GitHub API 除外,P2)。
 - N5 不汉化 Tern 本体(另有 zh-cn 插件)。
@@ -56,16 +56,16 @@
 
 | # | 故事 | 验收 |
 |---|---|---|
-| US-1 | 安装 Tern 插件后使用 CLI 采集;需要精确重名身份时按 README 加载同主机扩展 | 不自动改配置;缺桥仅唯一精确候选可解析,其余待确认 |
+| US-1 | 安装 Tern 插件后使用 CLI 采集;需要精确重名身份时按 README 加载同主机拓展 | 不自动改配置;缺桥且同名跨提供商时并列显示全部候选并标注 `同名 ×N`,不猜一家;同提供商多候选、全部无数据、非法桥与子代理重名仍待确认 |
 | US-2 | 我聚焦一个 omp 窗格,看到当前模型提供商的 5h/7d 用量线在上下文栏正上方 | 线仅在聚焦的 agent 窗格显示;宽度不够时整个窗口项换行或收起,不破版 |
 | US-3 | 我按 Alt+P 切换模型,包括同名同 id 的不同提供商 | 有效主桥下无需消息即可跟随 provider/id;按 pane/host/session/selector 检测变化,不只比较芯片 |
-| US-4 | 我悬停用量线,出现玻璃拟态卡片:每个窗口的计量器、重置倒计时与时钟时间、已保存重置的到期时间、今日 token/费用、设置快捷键 | 卡片在 ~400 ms 延迟后出现;移开即消失;Reduce Motion 时无动画 |
+| US-4 | 我悬停用量线,出现玻璃拟态卡片:每个窗口的计量器、重置倒计时、已存重置的到期时间、今日 token/费用、设置快捷键 | 卡片在 ~400 ms 延迟后出现;移开短暂停留仍可悬停;Reduce Motion 时无动画 |
 | US-5 | 我看一眼状态栏的 `🔥 616M tokens 💰 $235`,知道今天花了多少;点它打开 7 天仪表盘 | 数据来自 `omp stats`,每日零点清零;点击打开/聚焦仪表盘窗格 |
 | US-6 | 我同时登录 Kimi 和 Codex,在设置里选"全部提供商"或勾选想看的,拖不动就用上下移按钮排序 | 设置即时生效并在所有 Tern 窗口共享(存 `tern.kv`) |
-| US-7 | 我在设置面板给 Kimi 换成自定义颜色 `#22d3ee, #a78bfa`,线和卡片立即变色 | 支持 6 个命名预设 + 自定义 1–2 个 hex + 重置 |
+| US-7 | 我在设置菜单给 Kimi 换成自定义颜色 `#22d3ee, #a78bfa`,线和卡片立即变色 | 支持 6 个命名预设 + 自定义 1–2 个 hex + 重置 |
 | US-8 | Kimi 报告同时含 `7d` 和内容相同的 `limit_7d` 两个窗口,我不想看到重复 | 去重后只显示一个 |
 | US-9 | 默认当前模式只展示真正选中提供商 | 未解析显示待确认;自身无数据只显示自身提示,绝不退回其他提供商 |
-| US-10 | omp 命令临时失败,线保留上一次数据并显示陈旧标记,恢复后自动更新 | 连续失败 2 次起在卡片中标注"数据 X 分钟前";恢复后清除 |
+| US-10 | omp 命令临时失败,线保留上一次数据,恢复后自动更新 | 超过 15 分钟未更新时状态栏出现 ⚠ 段(点击打开诊断);恢复后自动清除 |
 
 ## 4. 功能需求
 
@@ -79,12 +79,12 @@
 - FR-1.4 剩余 ≤ 25% 该窗口变琥珀色,≤ 10% 变红色(阈值可设置,FR-6.5)。
 - FR-1.5 显示模式:`current`(默认,当前模型提供商)/ `all`(全部提供商)/ `selected`(勾选的提供商)。`all`/多提供商时省略倒计时与 "left" 字样(卡片里有)。
 - FR-1.6 窄窗格:放不下的窗口整项换行到被裁剪的第二行(不截半个字)。
-- FR-1.7 数据变化时整行重打,变化的计量条跑"彗星"动画到新值(配额降 = 提供商色,回升 = 绿色);Reduce Motion 下全部动画禁用。
+- FR-1.7 数据变化时整行重打(条形按字符区间重新着色);条形位移动画列为后续,未实现。Reduce Motion 下全部动画禁用。
 
 ### FR-2 悬停卡片(P0)
 
-- FR-2.1 悬停 ~400 ms 后在线上方弹出卡片,逐窗口:计量器、剩余百分比、重置倒计时与时钟时间。
-- FR-2.2 已保存重置(saved resets):`(+N)` 显示在 7d 窗口行内;卡片中列出每次的到期日期时间。
+- FR-2.1 悬停 ~400 ms 后在线上方弹出卡片,逐窗口:计量器、剩余百分比、相对重置倒计时(`resets in 2h31m`)。
+- FR-2.2 已保存重置(saved resets):线上 7d 行尾显示 `+N`;卡片在 7d 行下列出已存重置数与最近的到期剩余时间(`expires in 10d 14h`)。
 - FR-2.3 `all` 模式下卡片按提供商分组。
 - FR-2.4 卡片尾行:今日 token/费用摘要 + "settings · Ctrl+Alt+U" 快捷键提示(实际键位从 Tern 键位表读取)。
 
@@ -101,7 +101,7 @@
 ### FR-4 当前模型识别(P0)
 
 - FR-4.1 从聚焦 dock 读取芯片、focus 与隐藏 role `dora.omp.model-identity`;统一 `lib/identity.luau` 供渲染和诊断使用。桥 v1 包含 sessionId、scope main、provider、id。
-- FR-4.2 `omp models --json` 每 10 min 刷新为目录 v2:by_name 保存全部候选,by_selector/ by_provider 保留身份索引。有效主桥优先;仅缺桥允许唯一精确显示名(按 omp 去掉开头 `Claude `)回退。无 first-hit、id 子串、前缀启发、默认配置/消费证据排序;非法/不支持桥禁止回退。
+- FR-4.2 `omp models --json` 每 10 min 刷新为目录 v2:by_name 保存全部候选,by_selector/ by_provider 保留身份索引。有效主桥优先;仅缺桥允许显示名(按 omp 去掉开头 `Claude `)目录回退——唯一精确候选直接解析,同名跨提供商多候选全部显示并标注 `同名 ×N`。无 first-hit、id 子串、前缀启发、默认配置/消费证据排序;非法/不支持桥禁止回退。
 - FR-4.3 查看子代理时不复用主身份,仅其唯一精确目录候选可解析。未解析显示待确认与悬停帮助;自身提供商无数据不切换其他提供商。all/selected 不变。
 - FR-4.4 模型变化按 pane、host、session、selector 跟踪,用缓存重绘并请求用量刷新;约 1 秒读取周期不是硬时延保证。诊断显示状态、来源与原因。
 
@@ -115,7 +115,7 @@
 
 ### FR-6 设置(P0)
 
-- FR-6.1 打开方式:键位 `Ctrl+Alt+U`(可改绑 `plugin.dora-tern-omp-usage.panel`)、命令面板 "Dora omp Usage: Settings panel"、状态栏 `usage` 段点击、悬停卡片尾行。面板在聚焦窗格旁打开,重复打开聚焦已有面板。
+- FR-6.1 打开方式:键位 `Ctrl+Alt+U`(可改绑 `plugin.dora-tern-omp-usage.panel`)、命令面板 "Dora omp Usage: Settings"、状态栏 `usage` 段点击、悬停卡片尾行提示。设置以命令面板的 pick 菜单呈现(canvas 面板未实现,列为后续里程碑)。
 - FR-6.2 设置项(即时生效,所有窗口共享,存 `tern.kv`):
 
 | 组 | 项 | 默认 |
@@ -127,49 +127,51 @@
 | Meters | 警戒阈值 amber%(默认 25)、red%(默认 10) | 25 / 10 |
 | Polling | 用量刷新间隔(默认 90 s,下限 60 s)、今日统计间隔(默认 5 min) | 90 s / 5 min |
 | Status bar | 今日 token 段开关、今日费用段开关 | 开 |
-| Alerts | 达到阈值/锁定/解锁时 toast(开/关) | 开 |
+| Alerts | 达到阈值/锁定/解锁时 toast(开/关;toasts 本体未实现) | 开 |
 | Language | en / zh-CN | 跟随 Tern,默认 en |
 
-- FR-6.3 命令面板提供 "Dora omp Usage: Settings…" 菜单版(等价功能,键盘友好):显示模式、选择提供商(多选列表)、排序、颜色。
-- FR-6.4 设置写入统一走设置模块(校验 + `tern.kv`),面板/菜单/命令共用。
-- FR-6.5 告警 toast(P1):窗口升至阈值、锁定、重新可用时各一条,带重置倒计时;同窗口状态不重复提醒。
+> 注:canvas 面板未实现,设置经 FR-6.3 的菜单提供;Meters 阈值(warn_at/bad_at)暂无菜单入口,仅默认值生效,`prompt_warn/prompt_bad` 文案已就绪待接入。
+
+- FR-6.3 命令面板提供 "Dora omp Usage: Settings" 菜单(实际实现的入口):显示模式、选择提供商(多选列表)、排序、颜色、刷新、仪表盘、两个刷新间隔、语言、状态栏开关、检查更新、重置。
+- FR-6.4 设置写入统一走设置模块(校验 + `tern.kv`),菜单/命令共用。
+- FR-6.5 告警 toast(P1,未实现):窗口升至阈值、锁定、重新可用时各一条,带重置倒计时;同窗口状态不重复提醒。设置项 `alerts` 已存储并可在菜单开关,toasts 本体待补。
 
 ### FR-7 仪表盘(P1)
 
-- FR-7.1 block 形式(host 半),`OMP Usage Plus: dashboard` 命令或点击今日段打开,在旁侧开新窗格;已有则聚焦。
+- FR-7.1 block 形式(host 半),`Dora omp Usage: dashboard` 命令或点击今日段打开,在旁侧开新窗格;已有则聚焦。
 - FR-7.2 内容:`omp usage --history --json --days 7` 的逐小时用量(当前提供商的窗口,meter + sparkline)+ 今日/近 7 天/本月费用(`ui.kv`)+ 近 7 天柱状图(`ui.bars`)。
 - FR-7.3 `r` 键手动刷新。
 
 ### FR-8 安装、更新、卸载(P0)
 
 - FR-8.1 安装:`tern plugin install github.com/DoraJasmine/dora-tern-omp-usage` 或设置页 Install;精确主身份另需同主机加载 `omp/extensions/model-identity.js`(omp ≥ 18.18.0)。拓展装载支持四种方式——`omp plugin install github:…` 一行安装(package.json 声明 omp.extensions 入口)、`omp plugin link` 本地链接、`~/.omp/agent/extensions/` 发现目录复制、config.yml 绝对路径与显式 `-e`;README 提供 Windows/WSL/SSH 路径示例,并注明同一主机不要重复装载。
-- FR-8.2 卸载/停用 Tern 插件不自动修改外部文件;若用户配置过可选扩展,可自行移除该 extensions 条目。插件不代改配置。
+- FR-8.2 卸载/停用 Tern 插件不自动修改外部文件;若用户配置过可选拓展,可自行移除该 extensions 条目。插件不代改配置。
 - FR-8.3 更新:`tern plugin install --force <同地址>` 覆盖;P2:每日检查 GitHub release,状态栏 ⬆ 段 + 一键更新(joaodutra88 模式)。
-- FR-8.4 迁移提示(P2):检测到 jmazzola 插件残留的 omp 扩展配置(`config.yml` 中的 usage-remaining.js 行)时,toast 提示可手动移除(本插件绝不自动改用户配置文件)。
+- FR-8.4 迁移提示(P2):检测到 jmazzola 插件残留的 omp 拓展配置(`config.yml` 中的 usage-remaining.js 行)时,toast 提示可手动移除(本插件绝不自动改用户配置文件)。
 
 ## 5. 非功能需求
 
 | # | 需求 | 指标 |
 |---|---|---|
 | NFR-1 性能 | 定时器回调不得阻塞 | 任何回调 ≤ 50 ms(Tern 会对超时插件停掉全部定时器);进程调用一律 `tern.process.run` 异步;每回调最多启动 1 个进程,串行排队 |
-| NFR-2 轮询 | 默认用量 90 s、模型目录 10 min、stats 5 min、composer 树 1 s、缓存文件 3 s | 失败退避:连续失败翻倍间隔,上限 10 min;手动刷新立即执行并 invalidate |
-| NFR-3 限流安全 | 常规轮询不调 `omp usage invalidate`;单进程超时 15 s;串行避免并发进程 | Anthropic 429 阈值(~5 min)下允许用户自担(可调低间隔,文档警示) |
+| NFR-2 轮询 | 默认用量 90 s、模型目录 10 min、stats 5 min、composer 身份 100 ms、数据快照 1 s | 失败保留上次数据,下个周期重试;手动刷新立即执行并 invalidate |
+| NFR-3 限流安全 | 常规轮询不调 `omp usage invalidate`;单进程超时 20 s;每源串行避免并发进程 | Anthropic 429 阈值(~5 min)下允许用户自担(可调低间隔,架构文档 §16 警示) |
 | NFR-4 兼容 | Tern 0.8+;身份桥要求 omp ≥ 18.18.0 | 已在隔离 headless Tern 0.9.12 / Windows 与 WSL omp 18.18.0 验证;旧版隐藏节点兼容性和 SSH 运行未验证 |
 | NFR-5 降级 | 见架构文档 §9 降级矩阵 | 当前模式未解析待确认、自身无数据提示;无 stats 隐藏今日段;CLI 失败不借用其他提供商 |
 | NFR-6 i18n | 插件自身 UI 文案(en/zh-CN)集中在 labels 模块 | 面板、菜单、toast 全覆盖;缺项回退 en |
 | NFR-7 安全 | 不读写 omp 凭据;不修改 `~/.omp/**`;仅读 CLI 输出与写自身 kv | 安装即信任(Tern 插件模型),不扩大权限面 |
 | NFR-8 资源 | 常驻内存增量 ≤ 数 MB;无窗口时 host 轮询继续(为状态栏和kv保数据新鲜) | kv 中缓存序列化后 < 1 MB |
-| NFR-9 可维护 | Luau 插件与无依赖 JS 身份扩展;解析层无 tern 依赖 | 两份纯回归脚本通过实际 Tern Luau 执行,集成源完成语法编译,JS 通过 node --check;无已配置的项目 LSP/类型检查器 |
+| NFR-9 可维护 | Luau 插件与无依赖 JS 身份拓展;解析层无 tern 依赖 | 两份纯回归脚本通过实际 Tern Luau 执行,集成源完成语法编译,JS 通过 node --check;无已配置的项目 LSP/类型检查器 |
 
 ## 6. 验收标准(首版)
 
-1. 干净机器安装 Tern 插件后,已登录并聚焦 omp 窗格时展示用量或明确待确认状态,不自动触碰配置;另按 README 显式加载主身份扩展后可精确区分重名模型。
+1. 干净机器安装 Tern 插件后,已登录并聚焦 omp 窗格时展示用量或明确待确认状态,不自动触碰配置;另按 README 显式加载主身份拓展后可精确区分重名模型。
 2. Kimi(7d/5h)、Codex(5h/7d + ×N)、Claude(5h/wk/Fable)三种报告形态均正确渲染,Kimi 无重复窗口。
 3. 有效主桥下 Alt+P 同名同 id 跨提供商切换无需发送消息即可跟随;子代理不继承主身份,重名待确认;不承诺固定两秒时延。
 4. 悬停出卡片,内容与 jmazzola 对齐 + 今日 token/费用尾行。
 5. 状态栏显示今日 token/费用胶囊,点击打开仪表盘,仪表盘有 7 天历史与费用。
-6. 设置面板全部项即时生效,重启 Tern 后保留。
-7. `tern plugin reload` 后设置与面板恢复;杀掉 omp 进程后线消失且无报错 toast 刷屏;恢复 omp 后自动回来。
+6. 设置菜单全部项即时生效,重启 Tern 后保留。
+7. `tern plugin reload` 后设置恢复;杀掉 omp 进程后线消失且无报错 toast 刷屏;恢复 omp 后自动回来。
 
 ## 7. 风险与开放问题
 
@@ -177,8 +179,8 @@
 |---|---|---|
 | R1 | Tern 内部 CSS 类(`sf-*`/`tn-*`)与节点 id 无兼容承诺,版本升级可能破版 | 选择器集中管理;启动时探测 meter 节点是否存在,不存在则线不渲染并在卡片/日志说明;README 标注已验证版本 |
 | R2 | omp CLI JSON schema 变化 | 解析层宽容(字段缺失跳过);README 标注已验证 omp 版本 |
-| R3 | 无桥或查看子代理时同名模型无法精确区分 | 唯一精确目录候选可解析;歧义待确认,不排名、不前缀猜测、不显示别家的额度 |
-| R4 | 轮询 `omp usage` 的提供商侧限流 | 默认 90 s + 退避;文档说明;`invalidate` 仅手动刷新使用 |
+| R3 | 无桥或查看子代理时同名模型无法精确区分 | 缺桥时唯一精确候选直接解析,同名跨提供商并列显示全部候选(标注 `同名 ×N`);同提供商多候选与子代理歧义待确认,不排名、不前缀猜测、不显示别家的额度 |
+| R4 | 轮询 `omp usage` 的提供商侧限流 | 默认 90 s 固定间隔,失败保留旧数据;文档说明;`invalidate` 仅手动刷新使用 |
 | R5 | 多 Tern 窗口时 window 半各自查树,host 半单一轮询,数据一致性 | host 为唯一数据生产者(写 kv),window 只读,kv 原子读写 |
 | R6 | 今日统计依赖 `omp stats` 本机同步(stats.db 为空/未同步时恒为 0) | 文档说明;卡片尾行缺失时隐藏该行;后续可评估读 `~/.omp` 会话文件的替代方案(不承诺) |
 | Q1 | 状态栏今日段是否需要在非 agent 窗格隐藏?(joaodutra88 为 agent 窗格聚焦时显示) | 待定:默认跟随焦点,设置可改为常显 |
