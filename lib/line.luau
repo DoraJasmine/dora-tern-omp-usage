@@ -353,7 +353,8 @@ function M.build(settings: any, data: any, now: number): any
 			local count = #fallback_candidates
 			notice = {
 				text = string.format(L.same_name_title, count),
-				line = string.format(L.same_name_line, count),
+				-- The line marker stays ASCII (see IMPLEMENTATION §4): CJK width would shift every bar's fill.
+				line = string.format(en.same_name_line, count),
 				detail = L.same_name_detail,
 			}
 		elseif #groups == 0 then

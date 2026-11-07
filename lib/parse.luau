@@ -250,7 +250,7 @@ function M.usage(doc: any, now: number): any
 			end
 			-- omp's capacity windows are ids for some providers ("5h", "7d") and labels for others
 			-- ("7 Day"), and mirror the report's odd windows too ("limit_7d"): accept only known ones.
-			local raw = string.lower(string.gsub(tostring(entry.window or ""), "%s+", " "))
+			local raw = string.lower((string.gsub(tostring(entry.window or ""), "%s+", " ")))
 			local key, label, ms = nil, nil, nil
 			if raw == "5h" then
 				key, label, ms = "5h", "5h", 5 * HOUR

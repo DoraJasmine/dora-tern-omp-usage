@@ -61,7 +61,9 @@ assert(fallback.groups[1].id == "leimugpt" and fallback.groups[2].id == "openai-
 assert(fallback.groups[1].spend.tokens == 3 and fallback.groups[2].windows[1].pct == 73)
 assert(fallback.signature ~= codex_again.signature, "fallback must not look like a resolved provider")
 settings.language = "zh-CN"
-assert(line.build(settings, data, 0).notice.line ~= fallback.notice.line, "the line marker must be localized")
+local zh_fallback = line.build(settings, data, 0)
+assert(zh_fallback.notice.text ~= fallback.notice.text, "the card title must be localized")
+assert(zh_fallback.notice.line == fallback.notice.line, "the line marker must stay ASCII for glyph alignment")
 settings.language = "en"
 
 -- A candidate with no own data is omitted, but the line still says more than one name matched.

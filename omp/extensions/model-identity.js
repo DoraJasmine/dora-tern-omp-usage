@@ -1,4 +1,5 @@
-// Requires omp >= 18.18.0. Load with: omp --no-extensions -e /absolute/path/model-identity.js
+// Requires omp >= 18.18.0. Load per the README: `omp plugin install github:DoraJasmine/dora-tern-omp-usage`,
+// a copy in ~/.omp/agent/extensions/, config.yml registration, or `omp --no-extensions -e <path>`.
 // This is a main-session identity transport, not the model of a viewed subagent.
 const WIDGET_KEY = "dora-omp-model-identity";
 const IDENTITY_ROLE = "dora.omp.model-identity";

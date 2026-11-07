@@ -1,5 +1,6 @@
 -- Settings, kept in tern.kv (shared by every window and the host half), with the providers' palettes.
 -- All writes go through here so the panel, the menus and future surfaces share validation.
+local parse = require("./parse")
 local M = {}
 
 local DEFAULTS = {
@@ -192,16 +193,8 @@ function M.ordered(settings: any, present: { string }): { string }
 		end
 	end
 	table.sort(rest, function(a: string, b: string)
-		local ra, rb = nil, nil
-		for i, p in { "anthropic", "openai-codex", "openai", "kimi-code", "google-gemini-cli", "google-antigravity", "minimax-code", "opencode-go", "alibaba-token-plan", "synthetic", "devin" } do
-			if p == a then
-				ra = i
-			end
-			if p == b then
-				rb = i
-			end
-		end
-		if ra and rb then
+		local ra, rb = parse.provider_rank(a), parse.provider_rank(b)
+		if ra ~= rb then
 			return ra < rb
 		end
 		return a < b
