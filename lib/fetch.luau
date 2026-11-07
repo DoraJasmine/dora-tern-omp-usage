@@ -79,6 +79,7 @@ end
 local busy: { [string]: string? } = {}
 local pending: { [string]: string? } = {}
 local last_refresh: number = 0
+local next_service_at = 0
 
 function M.sources(): { string }
 	local out: { string } = { "local" }
@@ -392,21 +393,35 @@ end
 
 -- ── the service ─────────────────────────────────────────────────────────────
 
--- Manual refreshes first, then whatever is due, on every source.
+-- Check switch/manual requests frequently; retain the slow cadence for periodic work.
 function M.service()
 	local request = M.kv_get("refresh_request")
 	if type(request) == "number" and request > last_refresh then
 		last_refresh = request
 		for _, source in M.sources() do
+			M.kv_set("refresh_usage@" .. source, nil)
 			M.maybe_fetch(source, "usage", true)
 		end
 		return
 	end
-	detect_wsl()
+	local clock = tern.now()
+	local periodic = clock >= next_service_at
+	if periodic then
+		next_service_at = clock + 5000
+		detect_wsl()
+	end
 	for _, source in M.sources() do
-		M.maybe_fetch(source, "usage", false)
-		M.maybe_fetch(source, "models", false)
-		M.maybe_fetch(source, "stats", false)
+		local requested = M.kv_get("refresh_usage@" .. source) == true
+		if requested then
+			M.kv_set("refresh_usage@" .. source, nil)
+		end
+		if requested or periodic then
+			M.maybe_fetch(source, "usage", requested)
+		end
+		if periodic then
+			M.maybe_fetch(source, "models", false)
+			M.maybe_fetch(source, "stats", false)
+		end
 	end
 end
 

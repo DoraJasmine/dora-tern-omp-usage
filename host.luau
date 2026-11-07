@@ -19,7 +19,7 @@ local function every(ms: number, fn: () -> ())
 	loop()
 end
 
-every(5000, fetch.service)
+every(250, fetch.service)
 
 -- ── costs, aggregated over every source the fetch service records ───────────
 

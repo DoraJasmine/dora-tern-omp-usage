@@ -87,8 +87,8 @@ Tern 托管路径(Windows 的 `%LOCALAPPDATA%\Tern\omp\bin\omp.exe` 及 macOS / 
 
 ### tern.timer
 
-单次定时器,循环必须在回调中重新注册。插件的全部轮询(fetch 服务 5s、窗口 tick 1s、
-watchdog 10s)均基于它。
+单次定时器,循环必须在回调中重新注册。宿主每 250ms 接收切换刷新请求,常规任务每 5s 检查;
+窗口 tick 为 100ms,数据快照为 1s,watchdog 为 10s。`tern.now()` 的单调毫秒时钟用于快照与常规任务节流。
 
 ## 2. 窗口渲染与状态栏
 
@@ -124,7 +124,7 @@ command`)或 nil。插件用它展示焦点窗格所属主机的当日 token 与
 
 ### cx.session:surface(pane, { root = "dock" })
 
-读取窗格 UI 树(节点结构为 `{id, p:{role, spans:[{t}]}, c:[...]}`),每约 1 秒读取 dock,调用务必 pcall。`lib/identity.luau` 提取模型芯片、子代理 focus 与隐藏 role `dora.omp.model-identity`。桥 JSON v1 包含 `sessionId, scope: main, provider, id`;重复/截断/非法/不支持节点不能降级为缺桥。
+读取窗格 UI 树(节点结构为 `{id, p:{role, spans:[{t}]}, c:[...]}`),每约 100ms 读取 dock,调用务必 pcall。`lib/identity.luau` 提取模型芯片、子代理 focus 与隐藏 role `dora.omp.model-identity`。桥 JSON v1 包含 `sessionId, scope: main, provider, id`;重复/截断/非法/不支持节点不能降级为缺桥。
 
 有效主桥确定当前 provider/id;子代理不继承。仅缺桥或有效主桥下查看子代理时,才可使用目录 v2 的唯一精确显示名候选;无 first-hit、模糊/id 子串或启发。未解析显示待确认及悬停帮助,诊断共享解析结果。
 

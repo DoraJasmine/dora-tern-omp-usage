@@ -52,7 +52,7 @@ Installing only the Tern plugin cannot guarantee exact identity for duplicate mo
   provider toggles and the ordering menu.
 - **Hover card** with per-window meters, reset times and clock times, saved-reset expiries, today's totals and
   settings shortcut. It stays open while you point at it.
-- **Model follow**: the companion exposes the live main-session provider/id, distinguishing models with identical names and bare ids without sending messages. Updates normally follow the ~1 s surface-read cycle, not a hard latency guarantee. Without the bridge, or while viewing a child, only a unique exact displayed-name catalog match resolves; otherwise the line shows a helpful pending notice.
+- **Model follow**: the companion exposes the live main-session provider/id, distinguishing models with identical names and bare ids without sending messages. Identity is checked every 100 ms; switches render the matching provider's cached data before requesting a background quota refresh. This is not a hard latency guarantee. Without the bridge, or while viewing a child, only a unique exact displayed-name catalog match resolves; otherwise the line shows a helpful pending notice.
 - **Per-host data**: a pane on WSL or an SSH host shows that host's accounts and stats, collected through the corresponding host transport; local panes show local data. Exact identity additionally requires loading the companion on that host.
 - **Status bar**: 🔥 today's tokens and 💸 today's API-price cost for the focused pane's host.
 - **Dashboard**: 7 days of usage history plus today/week/month API-price cost (`r` refreshes).

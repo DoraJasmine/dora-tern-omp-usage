@@ -25,7 +25,7 @@
 │  Host 半(守护进程,唯一)              Window 半(每窗口一个)      │
 │  ┌─────────────────────────┐          ┌─────────────────────────┐ │
 │  │ poller.luau             │          │ watcher.luau            │ │
-│  │  ├ usage: omp usage     │  tern.kv │  ├ 1s: 聚焦窗格 & composer│ │
+│  │  ├ usage: omp usage     │  tern.kv │  ├ 100ms: 焦点 & composer│ │
 │  │  │        --json (90s)  │ ────────▶│  │   树 → 模型芯片名     │ │
 │  │  ├ models: omp models   │ (usage/  │  ├ build: 组装 Line 模型 │ │
 │  │  │        --json (10m)  │  models/ │  ├ render: tern.css 注入 │ │
@@ -51,11 +51,11 @@
 
 ### D2 当前提供商识别:统一身份解析器
 
-1. 每约 1 s 读取聚焦窗格 dock,由 `lib/identity.luau` 提取芯片、子代理 focus 标志和 role `dora.omp.model-identity` 的 JSON。
+1. 每约 100 ms 读取聚焦窗格 dock,由 `lib/identity.luau` 提取芯片、子代理 focus 标志和 role `dora.omp.model-identity` 的 JSON。
 2. v1 身份字段为 `sessionId, scope: main, provider, id`。扩展使用 `ctx.models.current()` 实时 getter,不依赖公开 `model_changed` 事件。有效主桥确定 selector;目录对应项与芯片不符时待确认。
 3. 仅桥缺失时允许 v2 目录的唯一精确显示名候选(按 omp 去除开头 `Claude `)。`by_name` 保存候选列表,不丢同名项;无 first-hit、id 子串、前缀启发或配置/额度/消费排序。非法/不支持桥阻止回退。
 4. 查看子代理不复用主身份,只允许子代理芯片的唯一目录候选。未解析显示待确认及悬停帮助;自身提供商无数据只显示自身无数据,绝不退回全部。all/selected 保持原行为。
-5. 诊断复用相同解析结果;模型刷新身份键包括 pane、host、session、selector。约 1 秒是读取周期而非硬时延保证;具体烟测与限制见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
+5. 诊断复用相同解析结果;模型刷新身份键包括 pane、host、session、selector。先画对应缓存,再请求后台刷新。100ms 是读取周期而非硬时延保证;具体烟测与限制见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
 
 ### D3 用量线渲染:CSS 伪元素文本(沿用 jmazzola 技术)
 
@@ -75,7 +75,7 @@
 
 - 面板:`cx.canvas:open({view, dock, how="beside"})`,`tern.ui` 节点搭建(分段/开关/按钮/色点/预览线);交互经 `tern.on("canvas_action")` 回调(`mode/toggle/up/down/top/bottom/named/preset/custom/reset`)。
 - 菜单:`cx:pick` 多级列表(等价功能,纯键盘);`tern.command` 注册面板/菜单命令,面板命令带默认键位 `ctrl+alt+u`。
-- 存取:唯一入口 settings 模块(校验 + `tern.kv`);window 半每 tick 顺便重读(kv 便宜),改动即时全窗口生效。
+- 存取:唯一入口 settings 模块(校验 + `tern.kv`);window 半每 1s 重读快照,本窗口设置事件强制更新。
 
 ### D6 插件内 i18n(增强)
 
@@ -141,21 +141,21 @@ title = "Dora omp Usage"
 ### 5.2 window 渲染循环(watcher + render)
 
 ```
-tern.timer(1000) tick:
-  1. cx.session:focused() / :panes() → 聚焦窗格是否 agent
-  2. 是 → cx.session:surface(pane, { root="dock" }) → identity.read_dock(芯片、focus、隐藏身份)
-  3. 读按源 usage / models / today(settings 每 tick 顺便重读)
-  4. identity.resolve(dock, models) → line.build(settings, data) → Line 模型(含待确认/自身无数据)
-  5. 签名变化 → render.line():生成整段 CSS → tern.css("usage", css)
-     变化窗口 → 附 comet 动画 CSS(1.4s 后清除)
-  6. 非 agent 窗格 → tern.css("usage", "") 清除
-tern.on("focus") → 立即 tick 一次
-tern.timer(300) 启动首 tick;reload 后同路径恢复
+tern.timer(100) tick:
+  1. 每 1s 更新主机映射、settings 与各源 usage / models / today 缓存
+  2. cx.session:focused() / :pane() → 聚焦窗格是否 agent
+  3. 是 → cx.session:surface(pane, { root="dock" }) → identity.read_dock
+  4. identity.resolve(dock, models);身份未变且快照未刷新时直接返回
+  5. line.build → line.sheet → 内容变化时 tern.css("usage-plus", css)
+  6. 身份变化 → 写 refresh_usage@source,宿主每 250ms 接收并按源串行取数
+  7. 非 agent 窗格 → 清除 CSS
+tern.on("focus" / "window_start" / budget-resumed) → 强制刷新快照并 tick
+reload 后由加载期 100ms 定时器恢复;常规后台到期检查仍为 5s
 ```
 
 性能要点(全部来自两项目实测教训):
-- dock 树每秒重读 ~40 节点,渲染函数本体 10ms 级;若本 tick 只更新了 kv,跳过 CSS 重建。
-- kv 读取包 `pcall`;JSON 解码只在文本变化时执行(joaodutra88/jmazzola 均如此)。
+- dock 身份每 100ms 检查;设置、主机映射及 kv 数据每 1s 更新,避免在快路径重复读数据和生成 CSS。
+- kv 读取包 `pcall`;切换先画缓存再写刷新请求,窗口快路径不启动 CLI 进程。
 - 动画计时器用 `tern.timer(1450, clear)` 一次性清理。
 
 ### 5.3 状态栏与仪表盘

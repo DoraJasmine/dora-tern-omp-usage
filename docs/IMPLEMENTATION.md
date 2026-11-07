@@ -11,10 +11,10 @@
 ```
 plugin.toml          清单:id=dora-tern-omp-usage、host/window 入口、dashboard block 声明
 host.luau            宿主端(host half,守护进程线程):
-                       ├ fetch.service() 循环(每 5s,lib/fetch)
+                       ├ fetch.service() 每 250ms 接收刷新请求,常规任务仍每 5s 检查到期
                        └ dashboard 仪表盘块(omp usage --history + 各源 days@ 费用)
 window.luau          窗口端(window half,每个窗口的 UI 线程):
-                       ├ poll_loop 1s tick(焦点 pane → composer 树 → 画线)
+                       ├ poll_loop 100ms tick(焦点 pane → composer 身份 → 缓存重绘)
                        ├ window_start / focus / budget 事件钩子
                        ├ 多主机:host 映射与数据源解析(pane→host→source)
                        ├ 状态栏段(chrome.status,读缓存不读 kv!)
@@ -62,9 +62,9 @@ docs/                需求 / 架构 / 实现 / API 说明
 ```
 宿主端(每台机器)                              窗口端(每个窗口)
 ──────────────────────                          ─────────────────────
-fetch.service(5s)                               tick(1s / focus / window_start / budget-resumed)
- ├ detect_wsl(10min):wsl.exe -l -q              ├ refresh_host_map:cx.hosts:list() → pane→主机
- ├ maybe_fetch(local,"usage")                   ├ refresh_cache:各源 usage@/today@ 快照
+fetch.service(250ms; 常规检查 5s)                 tick(100ms / focus / window_start / budget-resumed)
+ ├ detect_wsl(10min):wsl.exe -l -q              ├ refresh_host_map(1s):cx.hosts:list() → pane→主机
+ ├ maybe_fetch(local,"usage")                   ├ refresh_cache(1s):各源 usage@/models@/today@ 快照
  │   omp usage --json → parse.usage             ├ data_for(焦点pane):host→source→数据
  ├ maybe_fetch(local,"models")                  ├ read_dock:芯片、focus、隐藏主身份
  │   omp models --json → parse.catalog(v2)      └ identity.resolve → line.build → line.sheet → tern.css
@@ -77,6 +77,8 @@ fetch.service(5s)                               tick(1s / focus / window_start /
 today@ssh:dora@wsl、days@local、days@wsl:…;窗口按焦点窗格所属主机选用。
 ```
 
+身份变化先完成缓存 CSS 重绘,再写 `refresh_usage@<source>=true`。宿主每 250ms 消费并删除请求,同一轮内的同源切换合并;未切换不增加额度请求。常规 usage/stats/models 到期间隔不变。宿主不可用时仍由窗口 10s watchdog 兜底取数,缓存切换不依赖它。
+
 **kv 键一览**(数据目录:`%LOCALAPPDATA%\Tern\plugin-data\dora-tern-omp-usage\kv.json`,
 WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
 
@@ -88,6 +90,7 @@ WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
 | `provider_days@<s>` / `by_model_prev@<s>` | `{version=2, days}` 按提供商账本 / `{version=2, by_provider}` byModel 累计基线 |
 | `wsl_distros` / `remote_hosts` | 检测到的 WSL 发行版 / 窗口上报的已连接远程主机 |
 | `fetch_lock@<s>` | 各源取数锁(4 秒窗口) |
+| `refresh_usage@<s>` | 布尔型切换刷新请求;先重绘后写入,宿主消费后删除 |
 | `settings` | 全部设置(DEFAULTS 见 settings.luau) |
 | `refresh_request` / `trace` | 手动刷新请求 / 最近 20 条取数事件(带 source 标注) |
 
@@ -107,7 +110,7 @@ WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
   `TODAY 18.5M · $0.35`(纯 ASCII),卡片一行中文全写;该类组同时参与签名,数字变化才重写 CSS。
 - 当前模式统一使用 `identity.resolve` 结果:有效主桥给出 provider/id/sessionId;仅缺桥允许唯一精确显示名目录候选(去除开头 `Claude `)。查看子代理不复用主桥。非法/不支持桥、重名或矛盾信号显示待确认及悬停说明;自身提供商无数据显示自身提示,不借用其他提供商。all/selected 不变。
 - 禁止 first-hit、前缀/id 子串启发及配置/消费证据排名。诊断使用同一解析结果;刷新键包括 pane、host、session、selector,不能只比较芯片文字。
-- 扩展使用 `ctx.models.current()` 实时 getter 与隐藏 role `dora.omp.model-identity` JSON v1;无公开 `model_changed` 事件依赖、无轮询、无写文件。README 给出每主机 Windows/WSL/SSH 加载方式。约 1 秒是读取周期,非固定延迟承诺;子代理重名仍待确认。烟测证据见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
+- 扩展使用 `ctx.models.current()` 实时 getter 与隐藏 role `dora.omp.model-identity` JSON v1;无公开 `model_changed` 事件依赖、无轮询、无写文件。README 给出每主机 Windows/WSL/SSH 加载方式。窗口每 100ms 读取身份,非固定延迟承诺;子代理重名仍待确认。烟测证据见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
 - 全部 CSS 在内容签名变化时整表重写(`tern.css("usage-plus", css)`),无状态残留;级联中的
   表名为 `plugin:local:dora-tern-omp-usage:usage-plus`。
 - **锚点选择器集中在 line.luau 顶部**(`METER`/`HOST_BASE`)。Tern 升级后若线条消失,先用诊断命令
@@ -115,7 +118,7 @@ WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
 
 ## 4.1 性能画像
 
-- 窗口 tick(1s):三次 kv 读 + `hosts:list` + composer 树(~40 节点)——与 jmazzola 同款节奏;
+- 窗口 tick(100ms):读取焦点与 composer 身份;设置、主机映射及数据快照每 1s 更新,焦点/设置事件强制更新。身份及快照都未变时跳过模型构建与 CSS 生成。
 - CSS 整表重写:数据变化或倒计时跳分时(约每分钟一次),单次 4~6KB 字符串拼接,可忽略;
 - omp 进程 spawn 串行且受设置控制(usage 90s / stats 5min / models 10min,单次 0.3~0.6s);
 - 内存观测:诊断命令会报告窗口 VM 的 Lua 堆(`collectgarbage("count")`)与 kv.json 体积。

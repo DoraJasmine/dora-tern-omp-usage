@@ -13,7 +13,9 @@ local SHEET = "usage-plus"
 -- Module state, declared early so every function below shares one scope.
 local cached: any = { settings = nil, by_source = nil, sources_list = nil,
 	wsl_list = nil, remote_list = nil, sig = nil, host_sig = nil }
-local POLL_MS = 1000
+local POLL_MS = 100
+local CACHE_MS = 1000
+local next_cache_at = 0
 local WATCHDOG_MS = 10000
 local STALE_MS = 15 * 60 * 1000
 
@@ -90,11 +92,7 @@ local function data_for(pane: number?): (string, any, string)
 		-- Never attribute another host's accounts or model catalog to this pane.
 		return source, {}, label
 	end
-	return source, {
-		usage = fetch.kv_get("usage@" .. source),
-		models = fetch.kv_get("models@" .. source),
-		today = fetch.kv_get("today@" .. source),
-	}, label
+	return source, (cached.by_source and cached.by_source[source]) or {}, label
 end
 
 -- ── rendering ───────────────────────────────────────────────────────────────
@@ -120,7 +118,7 @@ local function refresh_cache()
 	for _, source in sources do
 		local usage = fetch.kv_get("usage@" .. source)
 		local today = fetch.kv_get("today@" .. source)
-		cached.by_source[source] = { usage = usage, today = today }
+		cached.by_source[source] = { usage = usage, today = today, models = fetch.kv_get("models@" .. source) }
 		table.insert(sig_parts, tostring(if type(usage) == "table" then usage.at else nil))
 		table.insert(sig_parts, tostring(if type(today) == "table" then today.at else nil))
 	end
@@ -184,16 +182,18 @@ local function today_text(settings: any, label: string, today: any): string?
 	return string.format(L.today_line, label, line.compact_number(today.tokens :: number), today.cost :: number)
 end
 
-local function tick(cx: any?)
+local function tick(cx: any?, force: boolean?)
 	if cx == nil then
 		return
 	end
-	refresh_cache()
+	local clock = tern.now()
+	local refreshed = force == true or cached.settings == nil or clock >= next_cache_at
+	if refreshed then
+		refresh_host_map(cx)
+		refresh_cache()
+		next_cache_at = clock + CACHE_MS
+	end
 	local settings = cached.settings
-	local L = labels.get(settings.language)
-	local now = os.time() * 1000
-
-	refresh_host_map(cx)
 
 	local pane = cx.session:focused()
 	local focused_agent = false
@@ -217,13 +217,13 @@ local function tick(cx: any?)
 		tostring(pane), source, selection.sessionId or "", selection.selector or "",
 		selection.status, selection.reason, dock.chip or "", tostring(dock.viewing),
 	}, "\0")
-	-- Same-name switches and pane/session changes must invalidate the old selection too.
-	if selection_key ~= last_selection then
-		last_selection = selection_key
-		if selection.status == "resolved" and source ~= "?" then
-			fetch.maybe_fetch(source, "usage", true)
-		end
+	local changed = selection_key ~= last_selection
+	if not changed and not refreshed then
+		return
 	end
+	last_selection = selection_key
+	local L = labels.get(settings.language)
+	local now = os.time() * 1000
 	local usage = data.usage
 	local model = line.build(settings, {
 		usage = if type(usage) == "table" and type(usage.reports) == "table"
@@ -235,7 +235,8 @@ local function tick(cx: any?)
 	}, now)
 	if #model.groups == 0 and model.notice == nil then
 		install("")
-		return
+	else
+		install(line.sheet(settings, model, L, today_text(settings, host_label, data.today), data.today, now))
 	end
 	-- redraw the status bar when the shown host's data changed
 	local host_sig = source .. "/" .. tostring(if type(data.today) == "table" then data.today.at else nil) .. "/" .. tostring(data.sync_error or "")
@@ -243,7 +244,10 @@ local function tick(cx: any?)
 		cached.host_sig = host_sig
 		tern.chrome.refresh()
 	end
-	install(line.sheet(settings, model, L, today_text(settings, host_label, data.today), data.today, now))
+	if changed and selection.status == "resolved" and source ~= "?" then
+		-- The host service coalesces requests. No process spawn on the fast UI path.
+		fetch.kv_set("refresh_usage@" .. source, true)
+	end
 end
 
 local function poll_loop(cx: any?)
@@ -254,7 +258,7 @@ end
 tern.timer(POLL_MS, poll_loop)
 
 tern.on("focus", function(_ev: any, cx: any)
-	tick(cx)
+	tick(cx, true)
 end)
 
 -- A paused hook stops this plugin's timers; log it and redraw the moment it resumes.
@@ -263,7 +267,7 @@ tern.on("budget", function(ev: any, cx: any)
 		tern.log.info("usage-plus budget", ev.hook, ev.state, ev.ms or ev.paused_ms or "")
 	end)
 	if ev.state == "resumed" then
-		tick(cx)
+		tick(cx, true)
 	end
 end)
 
@@ -309,7 +313,7 @@ end
 -- Official startup hook: fires once per window after the session has settled (saved tabs
 -- restored), so the first draw sees the real panes instead of racing the restore.
 tern.on("window_start", function(cx: any)
-	tick(cx)
+	tick(cx, true)
 	check_updates(cx)
 end)
 
@@ -360,7 +364,7 @@ end
 
 local function after_change(cx: any)
 	if cx then
-		tick(cx)
+		tick(cx, true)
 		tern.chrome.refresh()
 	end
 end
