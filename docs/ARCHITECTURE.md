@@ -53,8 +53,8 @@
 
 1. 每约 100 ms 读取聚焦窗格 dock,由 `lib/identity.luau` 提取芯片、子代理 focus 标志和 role `dora.omp.model-identity` 的 JSON。
 2. v1 身份字段为 `sessionId, scope: main, provider, id`。扩展使用 `ctx.models.current()` 实时 getter,不依赖公开 `model_changed` 事件。有效主桥确定 selector;目录对应项与芯片不符时待确认。
-3. 仅桥缺失时允许 v2 目录的唯一精确显示名候选(按 omp 去除开头 `Claude `)。`by_name` 保存候选列表,不丢同名项;无 first-hit、id 子串、前缀启发或配置/额度/消费排序。非法/不支持桥阻止回退。
-4. 查看子代理不复用主身份,只允许子代理芯片的唯一目录候选。未解析显示待确认及悬停帮助;自身提供商无数据只显示自身无数据,绝不退回全部。all/selected 保持原行为。
+3. 仅桥缺失时允许 v2 目录回退。`by_name` 保存候选列表，不丢同名项；唯一精确显示名候选解析。跨提供商多候选全部保留并交给界面，不做 first-hit、id 子串、前缀启发或配置/额度/消费排序。非法/不支持桥阻止回退。
+4. 无桥且同名跨提供商时，当前模式同时显示全部候选并标注 `同名 ×N`；某家无数据只省略该项，切换同名模型时仍并列。同一提供商多候选、全部无数据、非法/不支持桥及查看子代理时显示待确认及悬停帮助。解析到自身提供商但没有数据只显示自身提示，绝不退回另一家。all/selected 保持原行为。
 5. 诊断复用相同解析结果;模型刷新身份键包括 pane、host、session、selector。先画对应缓存,再请求后台刷新。100ms 是读取周期而非硬时延保证;具体烟测与限制见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
 
 ### D3 用量线渲染:CSS 伪元素文本(沿用 jmazzola 技术)

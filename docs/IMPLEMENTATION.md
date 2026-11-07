@@ -10,6 +10,7 @@
 
 ```
 plugin.toml          清单:id=dora-tern-omp-usage、host/window 入口、dashboard block 声明
+package.json         omp 插件包清单:omp.extensions 声明身份拓展入口,支持 omp plugin install/link 一行装载
 host.luau            宿主端(host half,守护进程线程):
                        ├ fetch.service() 每 250ms 接收刷新请求,常规任务仍每 5s 检查到期
                        └ dashboard 仪表盘块(omp usage --history + 各源 days@ 费用)
@@ -108,9 +109,9 @@ WSL 在 `~/.local/state/tern/plugin-data/...`;`<s>` 为数据源名):
   默认 `visibility: hidden` 并带 0.5 秒过渡延迟,鼠标移开后短暂停留仍可悬停,不会一闪而过。
 - 没有额度窗口的按量计费服务(只存在于 `today@<s>.by_provider`)由 `M.build` 补成 `spend` 组:线上一段
   `TODAY 18.5M · $0.35`(纯 ASCII),卡片一行中文全写;该类组同时参与签名,数字变化才重写 CSS。
-- 当前模式统一使用 `identity.resolve` 结果:有效主桥给出 provider/id/sessionId;仅缺桥允许唯一精确显示名目录候选(去除开头 `Claude `)。查看子代理不复用主桥。非法/不支持桥、重名或矛盾信号显示待确认及悬停说明;自身提供商无数据显示自身提示,不借用其他提供商。all/selected 不变。
+- 当前模式统一使用 `identity.resolve` 结果:有效主桥给出 provider/id/sessionId;仅缺桥允许精确显示名目录回退。跨提供商同名候选全部显示并标注 `同名 ×N`,某家无数据只省略该项,不猜一家;同一提供商多候选、全部无数据或非法/不支持桥显示待确认。查看子代理不复用主桥。自身提供商无数据显示自身提示,不借用其他提供商。all/selected 不变。
 - 禁止 first-hit、前缀/id 子串启发及配置/消费证据排名。诊断使用同一解析结果;刷新键包括 pane、host、session、selector,不能只比较芯片文字。
-- 扩展使用 `ctx.models.current()` 实时 getter 与隐藏 role `dora.omp.model-identity` JSON v1;无公开 `model_changed` 事件依赖、无轮询、无写文件。README 给出每主机 Windows/WSL/SSH 加载方式。窗口每 100ms 读取身份,非固定延迟承诺;子代理重名仍待确认。烟测证据见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
+- 扩展使用 `ctx.models.current()` 实时 getter 与隐藏 role `dora.omp.model-identity` JSON v1;无公开 `model_changed` 事件依赖、无轮询、无写文件。README 给出每主机 Windows/WSL/SSH 加载方式。窗口每 100ms 读取身份,非固定延迟承诺;缺桥同名跨供应商显示全部候选,子代理重名仍待确认。烟测证据见 [CHIP-AMBIGUITY.md](CHIP-AMBIGUITY.md)。
 - 全部 CSS 在内容签名变化时整表重写(`tern.css("usage-plus", css)`),无状态残留;级联中的
   表名为 `plugin:local:dora-tern-omp-usage:usage-plus`。
 - **锚点选择器集中在 line.luau 顶部**(`METER`/`HOST_BASE`)。Tern 升级后若线条消失,先用诊断命令

@@ -4,44 +4,93 @@
 [Tern](https://stencil.so/tern), for **every provider omp reports** (Kimi, Codex, Claude, Gemini, MiniMax, …),
 plus today's tokens & API-price cost with a per-provider breakdown, a 7-day dashboard, and a settings panel.
 
-**One-line Tern plugin install:**
+![The hover card over the usage line above the omp composer: Codex's 5h and 7d windows with meters, reset countdowns and today's totals for the pane's host](docs/images/hover-card.png)
+
+> 中文说明:[README.md](README.md)
+
+## Installation
+
+Installation has two parts: **step 1, the Tern plugin** (required — all collection and display), and
+**step 2, the omp identity extension** (optional — exact main-session model following). The plugin works
+on its own; what changes without the extension is described in [step 2](#step-2-install-the-identity-extension-optional).
+
+### Step 1: install the Tern plugin (required)
+
+Tern 0.8+. One-line install:
 
 ```sh
 tern plugin install github.com/DoraJasmine/dora-tern-omp-usage
 ```
 
-Or paste the same address into Tern's **Preferences › Plugins › Install…**
+Or paste the same address into Tern's **Preferences › Plugins › Install…** You immediately get everything in
+"What it shows": per-provider limit bars, pay-as-you-go today spend, the hover card, today's tokens & cost,
+the 7-day dashboard and the settings panel. Data comes from the `omp usage` / `omp stats` CLI; the plugin
+never reads or writes omp configuration, and providers omp signs into later need no plugin update.
 
-![The hover card over the usage line above the omp composer: Codex's 5h and 7d windows with meters, reset countdowns and today's totals for the pane's host](docs/images/hover-card.png)
+### Step 2: install the identity extension (optional)
 
-> 中文说明:[README.md](README.md)
+The bundled `omp/extensions/model-identity.js` requires omp **18.18.0+** (exercised with Windows and WSL
+omp 18.18.0; CLI usage collection is independent of the extension and works on any omp). The identity bridge
+was exercised in isolated headless Tern 0.9.12; older native-node compatibility is not verified.
 
-## Requirements
+**What the extension does**: a hidden native node passes the live main-session provider/id/sessionId to the
+plugin, so current-model mode follows exactly and distinguishes models with identical names and bare ids,
+without sending a message. The extension does not poll, write files, or change the model chip.
 
-- Tern 0.8+; the identity bridge was exercised in isolated headless Tern 0.9.12. Older native-node compatibility is not verified.
-- [omp](https://omp.sh) **18.18.0+** for the companion identity extension; exercised with Windows and WSL omp 18.18.0. CLI usage collection remains independent.
-- The plugin never edits omp configuration automatically. Exact main-session identity requires loading the bundled extension on **each host running omp**.
+**Without it** the plugin still works, resolving identity from the displayed name alone:
 
-### Load the main-session identity extension
+- a unique displayed name still resolves exactly;
+- same-name cross-provider models show **every candidate provider** side by side with a `same-name ×N`
+  marker, never guessing one; a candidate with no own data is omitted while the marker stays;
+- multiple candidates within one provider, all candidates without data, an invalid or unsupported bridge, or
+  a duplicate name on a viewed child remain pending with hover guidance.
 
-Obtain this repository (for example, clone it to a stable directory). Add its extension's **absolute path** to the existing `extensions` list in that host's omp `config.yml`, preserving other entries:
+Load it on **each host running omp** (never only on the Windows machine running Tern; each WSL distribution
+and SSH host separately), picking **one** method per host — loading twice makes duplicate nodes, which are
+treated as an invalid bridge and shown as pending:
 
-```yaml
-extensions:
-  - 'D:/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js'
-```
+1. **One-line install (recommended)** — installs into omp's user plugin directory, effective for every local
+   omp session; upgrade later with `omp plugin upgrade`:
 
-That example is for Windows omp. For WSL/Linux omp use a host-accessible POSIX path, such as `/home/me/dora-tern-omp-usage/omp/extensions/model-identity.js`. A checkout on Windows drive D is accessible from WSL as `/mnt/d/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js`. For SSH, place the file on the remote host and use its remote absolute path. Restart the corresponding omp session to load the configuration.
+   ```sh
+   omp plugin install github:DoraJasmine/dora-tern-omp-usage
+   ```
 
-Alternatively, explicitly launch on that host without editing configuration (this disables other automatically discovered extensions):
+   For a local checkout, `omp plugin link <path-to-repo>`; source edits show through the link. Restart the omp
+   session or run `/reload-plugins` after installing or upgrading.
 
-```sh
-omp --no-extensions -e /absolute/path/to/dora-tern-omp-usage/omp/extensions/model-identity.js
-```
+2. **Discovery directory** — copy the single file to `~/.omp/agent/extensions/` on that host (on Windows:
+   `C:\Users\<you>\.omp\agent\extensions\`); omp auto-scans `.js` modules there. A copy under a project's
+   `.omp/extensions/` applies to that project only. The file can be copied straight out of the Tern plugin's
+   install directory (Windows: `%APPDATA%\Tern\plugins\dora-tern-omp-usage\omp\extensions\`) without cloning
+   this repo — but a hand copy will not follow plugin updates.
 
-Windows PowerShell: `omp --no-extensions -e 'D:/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js'`.
+3. **Register in config.yml** — obtain this repository (for example, clone it to a stable directory) and add
+   the extension's **absolute path** to the existing `extensions` list in that host's omp `config.yml`,
+   preserving other entries:
 
-Installing only the Tern plugin cannot guarantee exact identity for duplicate model names. The companion does not poll, write files, or change model-chip layout. A viewed child never inherits the main session's identity; duplicate child names remain pending. See [identity and limits](docs/CHIP-AMBIGUITY.md).
+   ```yaml
+   extensions:
+     - 'D:/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js'
+   ```
+
+   That example is for Windows omp. For WSL/Linux omp use a host-accessible POSIX path, such as
+   `/home/me/dora-tern-omp-usage/omp/extensions/model-identity.js`. A checkout on Windows drive D is
+   accessible from WSL as `/mnt/d/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js`. For SSH, place
+   the file on the remote host and use its remote absolute path. Restart the corresponding omp session to load
+   the configuration.
+
+4. **Explicit launch** — without editing configuration (this disables other automatically discovered
+   extensions):
+
+   ```sh
+   omp --no-extensions -e /absolute/path/to/dora-tern-omp-usage/omp/extensions/model-identity.js
+   ```
+
+   Windows PowerShell: `omp --no-extensions -e 'D:/Tern/dora-tern-omp-usage/omp/extensions/model-identity.js'`.
+
+A viewed child never inherits the main session's identity; duplicate child names remain pending. See
+[identity and limits](docs/CHIP-AMBIGUITY.md).
 
 ## What it shows
 
@@ -52,7 +101,7 @@ Installing only the Tern plugin cannot guarantee exact identity for duplicate mo
   provider toggles and the ordering menu.
 - **Hover card** with per-window meters, reset times and clock times, saved-reset expiries, today's totals and
   settings shortcut. It stays open while you point at it.
-- **Model follow**: the companion exposes the live main-session provider/id, distinguishing models with identical names and bare ids without sending messages. Identity is checked every 100 ms; switches render the matching provider's cached data before requesting a background quota refresh. This is not a hard latency guarantee. Without the bridge, or while viewing a child, only a unique exact displayed-name catalog match resolves; otherwise the line shows a helpful pending notice.
+- **Model follow**: the companion exposes the live main-session provider/id, distinguishing models with identical names and bare ids without sending messages. Identity is checked every 100 ms; switches render the matching provider's cached data before requesting a background quota refresh. This is not a hard latency guarantee. Without the bridge, a unique displayed name resolves normally, while same-name providers are all shown with a `same-name ×N` marker instead of guessing one. While viewing a child, only a unique exact displayed-name catalog match resolves; otherwise the line shows a helpful pending notice.
 - **Per-host data**: a pane on WSL or an SSH host shows that host's accounts and stats, collected through the corresponding host transport; local panes show local data. Exact identity additionally requires loading the companion on that host.
 - **Status bar**: 🔥 today's tokens and 💸 today's API-price cost for the focused pane's host.
 - **Dashboard**: 7 days of usage history plus today/week/month API-price cost (`r` refreshes).

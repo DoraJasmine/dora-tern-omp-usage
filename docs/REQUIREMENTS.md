@@ -142,7 +142,7 @@
 
 ### FR-8 安装、更新、卸载(P0)
 
-- FR-8.1 安装:`tern plugin install github.com/DoraJasmine/dora-tern-omp-usage` 或设置页 Install;精确主身份另需同主机加载 `omp/extensions/model-identity.js`(omp ≥ 18.18.0)。README 提供 Windows/WSL/SSH 绝对路径、config.yml 与显式 `-e` 示例。
+- FR-8.1 安装:`tern plugin install github.com/DoraJasmine/dora-tern-omp-usage` 或设置页 Install;精确主身份另需同主机加载 `omp/extensions/model-identity.js`(omp ≥ 18.18.0)。拓展装载支持四种方式——`omp plugin install github:…` 一行安装(package.json 声明 omp.extensions 入口)、`omp plugin link` 本地链接、`~/.omp/agent/extensions/` 发现目录复制、config.yml 绝对路径与显式 `-e`;README 提供 Windows/WSL/SSH 路径示例,并注明同一主机不要重复装载。
 - FR-8.2 卸载/停用 Tern 插件不自动修改外部文件;若用户配置过可选扩展,可自行移除该 extensions 条目。插件不代改配置。
 - FR-8.3 更新:`tern plugin install --force <同地址>` 覆盖;P2:每日检查 GitHub release,状态栏 ⬆ 段 + 一键更新(joaodutra88 模式)。
 - FR-8.4 迁移提示(P2):检测到 jmazzola 插件残留的 omp 扩展配置(`config.yml` 中的 usage-remaining.js 行)时,toast 提示可手动移除(本插件绝不自动改用户配置文件)。

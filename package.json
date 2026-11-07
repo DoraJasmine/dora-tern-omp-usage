@@ -1,0 +1,16 @@
+{
+  "name": "dora-tern-omp-usage",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Optional omp identity extension shipped with the Tern plugin Dora omp Usage: exact main-session model identity (provider/id) via a hidden native node. Install with `omp plugin install github:DoraJasmine/dora-tern-omp-usage`.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DoraJasmine/dora-tern-omp-usage.git"
+  },
+  "omp": {
+    "extensions": [
+      "./omp/extensions/model-identity.js"
+    ]
+  }
+}

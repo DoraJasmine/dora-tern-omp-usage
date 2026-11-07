@@ -126,7 +126,7 @@ command`)或 nil。插件用它展示焦点窗格所属主机的当日 token 与
 
 读取窗格 UI 树(节点结构为 `{id, p:{role, spans:[{t}]}, c:[...]}`),每约 100ms 读取 dock,调用务必 pcall。`lib/identity.luau` 提取模型芯片、子代理 focus 与隐藏 role `dora.omp.model-identity`。桥 JSON v1 包含 `sessionId, scope: main, provider, id`;重复/截断/非法/不支持节点不能降级为缺桥。
 
-有效主桥确定当前 provider/id;子代理不继承。仅缺桥或有效主桥下查看子代理时,才可使用目录 v2 的唯一精确显示名候选;无 first-hit、模糊/id 子串或启发。未解析显示待确认及悬停帮助,诊断共享解析结果。
+有效主桥确定当前 provider/id;子代理不继承。仅缺桥或有效主桥下查看子代理时,才可使用目录 v2 的精确显示名候选;无 first-hit、模糊/id 子串或启发。主会话跨提供商多候选全部显示并标注,不猜一家;同一提供商多候选、全部无数据、非法/不支持桥或查看子代理时显示待确认及悬停帮助。诊断共享解析结果。
 
 桥由仓库 `omp/extensions/model-identity.js` 提供,要求 omp ≥ 18.18.0,通过 `belowEditor` 隐藏原生 widget 和实时 `ctx.models.current()` getter,不依赖公开模型变更事件、不轮询、不写文件。需在每个 omp 主机显式加载,Windows/WSL/SSH 绝对路径示例见 README。
 
